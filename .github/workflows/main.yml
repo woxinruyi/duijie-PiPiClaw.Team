@@ -1,0 +1,117 @@
+name: PiPiClaw AOT Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # === Windows 阵营 ===
+          - { rid: win-x64,   os: windows-latest, ext: zip,    exe: PiPiClaw.exe, use_upx: true }
+          - { rid: win-x86,   os: windows-latest, ext: zip,    exe: PiPiClaw.exe, use_upx: false }
+          - { rid: win-arm64, os: windows-latest, ext: zip,    exe: PiPiClaw.exe, use_upx: false }
+
+          # === Linux 阵营 ===
+          - { rid: linux-x64,   os: ubuntu-latest,    ext: tar.gz, exe: PiPiClaw, use_upx: true }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm, ext: tar.gz, exe: PiPiClaw, use_upx: false }
+          # 32位 ARM：锁定 ubuntu-22.04
+          - { rid: linux-arm,   os: ubuntu-22.04,     ext: tar.gz, exe: PiPiClaw, use_upx: false }
+
+          # === macOS 阵营 ===
+          - { rid: osx-x64,   os: macos-latest,   ext: tar.gz, exe: PiPiClaw, use_upx: false }
+          - { rid: osx-arm64, os: macos-latest,   ext: tar.gz, exe: PiPiClaw, use_upx: false }
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Dependencies (Linux General & Cross-Compile)
+        if: startsWith(matrix.rid, 'linux')
+        run: |
+          sudo apt-get update
+          # 新增 lld，解决默认 bfd 链接器跨平台水土不服导致 Exit Code 1 的问题
+          sudo apt-get install -y clang zlib1g-dev build-essential 7zip lld
+          
+          # 针对 linux-arm (32位) 配置交叉编译工具链和正确的底层镜像源
+          if [ "${{ matrix.rid }}" == "linux-arm" ]; then
+            # 1. 更强大的正则修复：捕获所有不包含 [arch=...] 标签的 deb 行
+            sudo sed -i -E 's/^deb[[:space:]]+([^\[])/deb [arch=amd64,i386] \1/g' /etc/apt/sources.list
+            sudo sed -i -E 's/^deb[[:space:]]+([^\[])/deb [arch=amd64,i386] \1/g' /etc/apt/sources.list.d/*.list 2>/dev/null || true
+            
+            # 2. 写入 armhf 专属的 ports 源 (补全 updates 和 security 防依赖版本断层)
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+            echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+            
+            # 3. 启用架构并重新更新
+            sudo dpkg --add-architecture armhf
+            sudo apt-get update
+            sudo apt-get install -y gcc-arm-linux-gnueabihf zlib1g-dev:armhf
+          fi
+
+      - name: Build AOT
+        shell: bash
+        run: |
+          EXTRA_ARGS=""
+          if [ "${{ matrix.rid }}" == "linux-arm" ]; then
+            # 退回 .NET 强依赖的 clang。注入专属 objcopy，并强制启用 lld 完美链接
+            EXTRA_ARGS="-p:ObjCopyName=arm-linux-gnueabihf-objcopy -p:LinkerFlavor=lld"
+          fi
+          
+          dotnet publish -c Release \
+            -r ${{ matrix.rid }} \
+            -p:PublishAot=true \
+            -p:StripSymbols=true \
+            -p:DebugType=none \
+            $EXTRA_ARGS \
+            -o ./publish_dir
+
+      - name: UPX Compression
+        if: matrix.use_upx == true
+        uses: svenstaro/upx-action@v2
+        with:
+          files: ./publish_dir/${{ matrix.exe }}
+          args: --best --lzma
+          strip: true
+
+      - name: Cleanup and Packaging
+        shell: bash
+        run: |
+          cd ./publish_dir
+          
+          rm -rf *.pdb *.dbg *.dsym
+          
+          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
+            chmod +x ${{ matrix.exe }}
+          fi
+
+          if [ "${{ matrix.ext }}" == "zip" ]; then
+            7z a -tzip -mx=9 ../PiPiClaw_${{ matrix.rid }}.zip *
+          else
+            tar cf - * | 7z a -si -tgzip -mx=9 ../PiPiClaw_${{ matrix.rid }}.tar.gz
+          fi
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "PiPiClaw Latest Build"
+          files: PiPiClaw_${{ matrix.rid }}.${{ matrix.ext }}
+          make_latest: true
+          prerelease: false
+          append_body: true
+          overwrite: true
