@@ -13,6 +13,7 @@ namespace PiPiClaw.Team;
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(ChatRequest))]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(ChatResponse))]
 [JsonSerializable(typeof(NodeInfo))]
 internal partial class AppJsonContext : JsonSerializerContext { }
