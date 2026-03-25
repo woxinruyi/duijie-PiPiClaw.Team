@@ -66,7 +66,7 @@ class Program
     private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
     static async Task Main(string[] args)
     {
-        string url = "http://localhost:4050/";
+        string url = "http://+:4050/";
         using var listener = new HttpListener();
         listener.Prefixes.Add(url);
 
