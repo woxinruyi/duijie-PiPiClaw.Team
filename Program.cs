@@ -561,24 +561,30 @@ class Program
 
         .chat-bubble {
             position: absolute;
-            top: 4%; /* 往下挪一点，使其自然悬浮在顶部 */
+            top: 4%;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(255, 255, 255, 0.95);
             border: 1px solid rgba(0, 0, 0, 0.05);
             border-radius: 14px;
             padding: 8px 14px;
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 8px;
+            font-weight: 300;
             color: #475569;
             max-width: 90%;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             z-index: 100;
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
             animation: bubbleFloat 3s ease-in-out infinite;
             transition: all 0.3s ease;
+
+            /* 【修改部分】：允许多行文本并保留省略号 */
+            white-space: nowrap; 
+            display: -webkit-box;
+            -webkit-line-clamp: 4; /* 最多显示 4 行 */
+            -webkit-box-orient: vertical;
+            text-align: left;
+            line-height: 1.4;
+            overflow: hidden;
         }
 
         .chat-bubble::after {
@@ -653,10 +659,10 @@ class Program
 
         .id-card-area {
             position: absolute;
-            bottom: 30%;
-            right: 25%;
-            width: 20%;
-            height: 10%;
+            bottom: 63px;
+            right: 24%;
+            width: 25%;
+            height: 15%;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -665,13 +671,14 @@ class Program
         }
 
         .id-card-name {
-            font-size: clamp(8px, 2vw, 12px);
+            width: 24px;
+            font-size: clamp(5px, 1.3vw, 8px);
             font-weight: bold;
             color: #000000;
-            margin: 0;
+            margin: 4px 0px 2px 0px;
             line-height: 1.2;
             white-space: nowrap;
-            text-align: right;
+            text-align: left;
         }
 
         .id-card-role {
@@ -681,8 +688,24 @@ class Program
             line-height: 1.2;
             text-align: left;
             white-space: nowrap;
+            padding-left: 100%;
+            animation: marqueeScroll 6s linear infinite;
         }
-
+        .role-scroll-wrapper {
+            width: 100%;
+            overflow: hidden;
+            white-space: nowrap;
+            box-sizing: border-box;
+            container-type: inline-size;
+        }
+        @keyframes marqueeScroll {
+            0% {
+                transform: translateX(0); /* 从右侧外边开始 */
+            }
+            100% {
+                transform: translateX(-100%); /* 一直向左移动，直到自身完全移出左侧 */
+            }
+        }
         .company-card.at-work .shrimp-desk-img {
             display: block;
         }
@@ -762,11 +785,11 @@ class Program
         @keyframes blink { 50% { opacity: 0.4; } }
 
         .report-badge {
-            display: none; /* 初始隐藏，有报告后显示 */
+            display: block !important;
             position: absolute;
-            bottom: 8px; /* 绝对定位：距离底部8px */
-            left: 8px;   /* 绝对定位：距离左侧8px */
-            z-index: 20; /* 确保显示在图片上方 */
+            bottom: 7%;
+            right: 8px;
+            z-index: 20;
             background: #e3f2fd;
             color: #1976d2;
             border: 1px solid #bbdefb;
@@ -1130,7 +1153,6 @@ class Program
             });
         });
 
-        // 页面加载完成后自动执行
         window.addEventListener('load', async () => {
             try {
                 const res = await fetch('/api/config');
@@ -1141,7 +1163,7 @@ class Program
                     const desks = document.querySelectorAll('.company-card');
                     let index = 0;
 
-                    // 遍历保存的通讯录，依次填入工位
+                    // 1. 遍历保存的通讯录，依次填入工位
                     for (const [name, info] of Object.entries(cfg.PeerNodes)) {
                         if (index < desks.length) {
                             const role = info.Role || info.role || '资深员工';
@@ -1150,6 +1172,37 @@ class Program
                         }
                     }
                     console.log(`[初始化] 已成功加载 ${index} 位员工。`);
+
+                    // 👇 2. 【核心修复】：页面刷新后，主动去拉取一次历史记录，恢复气泡的“已有报告”状态
+                    for (let i = 0; i < index; i++) {
+                        const desk = desks[i];
+                        const empName = desk.querySelector('.id-card-name').innerText;
+                        const bubble = desk.querySelector('.chat-bubble');
+
+                        // 静默拉取该员工的历史记录
+                        fetch('/api/history', {
+                            headers: { 'X-Username': encodeURIComponent(empName) }
+                        })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(history => {
+                            if (history && history.length > 0) {
+                                // 检查记录里是否有大模型（Assistant）的有效回复
+                                const hasReport = history.some(m => 
+                                    (m.role?.toLowerCase() === 'assistant' || m.Role?.toLowerCase() === 'assistant') && 
+                                    (m.content || m.Content)
+                                );
+
+                                // 如果有历史报告，就把刷新后默认的“摸鱼中”强行改成“有报告”状态
+                                if (hasReport) {
+                                    bubble.classList.remove('thinking');
+                                    bubble.classList.add('done');
+                                    bubble.innerText = '上帝我工作完成了！(查看)';
+                                }
+                            }
+                        }).catch(e => {
+                            console.warn(`[状态恢复] 无法拉取 ${empName} 的历史记录`, e);
+                        });
+                    }
                 }
             } catch (e) {
                 console.error("加载配置失败:", e);
@@ -1237,7 +1290,6 @@ class Program
 
 
 
-        // 封装：将指定的工位 DOM 元素渲染为在职员工状态
         function renderEmployeeUI(deskElement, name, role) {
             deskElement.className = 'company-card at-work';
 
@@ -1246,6 +1298,7 @@ class Program
             deskElement.dataset.deskId = deskId;
 
             // 【核心修复1】：把 report-badge 移到 desk-img-container 内部
+            // 【核心修复2】：为 role 添加 role-scroll-wrapper 容器
             deskElement.innerHTML = `
                 <div class="chat-bubble" onclick="openReportFromBubble(event, this)">摸鱼中...</div>
                 <div class="desk-img-container">
@@ -1253,11 +1306,15 @@ class Program
                     <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
                     <img src="penzai2.png" class="desk-penzai">
                     <img src="penzai1.png" class="desk-penzai-2">
-                    <div class="report-badge" onclick="openReportById(event, '${deskId}', '${name}')">📄 最新报告</div>
+                    <div class="report-badge" style="display: block !important;" onclick="openReportById(event, '${deskId}', '${name}')">📄 工作日志</div>
                 </div>
                 <div class="id-card-area" style="pointer-events: none;"> 
                     <p class="id-card-name">${name}</p>
-                    <p class="id-card-role">${role}</p>
+
+                    <div class="role-scroll-wrapper">
+                        <p class="id-card-role">${role}</p>
+                    </div>
+
                 </div>
             `;
         }
@@ -1303,14 +1360,11 @@ class Program
                             bubble.classList.remove('done');
                             bubble.classList.add('thinking');
 
-                            const actionText = data.currentAction || '正在思考决策中...';
-                            // 加 Emoji 图标
-                            bubble.innerText = actionText.includes('思考') ? actionText : '⚙️ ' + actionText;
-                            // 【新增这一行】：给 DOM 加上 title 属性，截断的参数可以通过鼠标悬停看见全文
-                            bubble.title = actionText; 
+                            // 【修改部分】：直接应用从底层组装好的三行文本
+                            const actionText = data.currentAction || '🤔 正在分析决策中...';
+                            bubble.innerText = actionText;
+                            bubble.title = actionText; // 悬停可以看全文本
 
-                            const reportBadge = desk.querySelector('.report-badge');
-                            if (reportBadge) reportBadge.style.display = 'none';
                         } else {
                             const startTime = parseInt(desk.dataset.taskStartTime || '0');
                             if (Date.now() - startTime < 3000) {
@@ -1322,8 +1376,6 @@ class Program
                                 bubble.classList.add('done');
                                 bubble.innerText = '老板，我干完活了！(点我查看)';
 
-                                const reportBadge = desk.querySelector('.report-badge');
-                                if (reportBadge) reportBadge.style.display = 'block';
                             } 
                             // 如果本来就在摸鱼，更新离线或摸鱼文案
                             else if (!bubble.classList.contains('done')) {
@@ -1504,13 +1556,8 @@ class Program
             if (bubble) {
                 bubble.classList.remove('done');
                 bubble.classList.add('thinking');
-                bubble.innerText = '收到！启动中...';
-
-                // 👇 【新增这一行】：打上时间戳，给网络请求留出缓冲期
+                bubble.innerText = '愿上帝与我们同在！！！';
                 currentTargetDesk.dataset.taskStartTime = Date.now();
-
-                const reportBadge = currentTargetDesk.querySelector('.report-badge');
-                if (reportBadge) reportBadge.style.display = 'none';
             }
 
             try {
