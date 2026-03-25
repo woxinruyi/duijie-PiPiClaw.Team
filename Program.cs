@@ -115,15 +115,19 @@ class Program
                 res.ContentLength64 = buffer.Length;
                 await res.OutputStream.WriteAsync(buffer);
             }
-            else if (path == "/img_shrimp_working.png" || path == "/img_empty_desk.png")
+            else if (path.EndsWith(".png") || path.EndsWith(".jpeg") || path.EndsWith(".jpg"))
             {
                 string resourceName = $"PiPiClaw.Team.{path.Substring(1)}";
                 using var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
                 if (stream != null)
                 {
-                    res.ContentType = "image/png";
+                    res.ContentType = path.EndsWith(".png") ? "image/png" : "image/jpeg";
                     res.ContentLength64 = stream.Length;
                     await stream.CopyToAsync(res.OutputStream);
+                }
+                else
+                { 
+                
                 }
             }
             // 3. 配置文件接口 GET /api/config
@@ -424,9 +428,60 @@ class Program
         }
 
         .header {
+            width: 100vw;
+            box-sizing: border-box;
             text-align: center;
-            margin-bottom: 20px;
-            color: #333;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.35); /* 半透明玻璃质感 */
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+            color: #4a3f35; /* 配合背景的深咖啡色 */
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 2.2rem;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+            letter-spacing: 2px;
+        }
+        .header p {
+            margin: 0;
+            font-size: 1.05rem;
+            color: #5c4e40;
+            font-weight: 600;
+        }
+
+        /* --- 新增: 顶部按钮专属样式 --- */
+        .top-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .top-btn-clear {
+            background: linear-gradient(135deg, #e67e22, #d35400); /* 暖橙渐变 */
+            color: #fff;
+        }
+        .top-btn-clear:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(211, 84, 0, 0.3);
+        }
+        .top-btn-create {
+            background: linear-gradient(135deg, #4a3f35, #2c251f); /* 沉稳深咖渐变 */
+            color: #fff;
+        }
+        .top-btn-create:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(44, 37, 31, 0.35);
         }
 
         .desk-grid {
@@ -530,7 +585,6 @@ class Program
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: hidden; /* 把裁切限制放在图片层，保护圆角 */
             border-radius: 10px;
         }
 
@@ -701,16 +755,45 @@ class Program
         .report-body table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
         .report-body th, .report-body td { border: 1px solid #ddd; padding: 8px; }
         .report-body th { background-color: #f2f2f2; }
+
+        .desk-penzai {
+            position: absolute;
+            bottom: 0%;
+            left: -5%;  
+            width: 28%;
+            z-index: 12;
+            pointer-events: none; 
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
+            transition: transform 0.3s ease;
+        }
+        .company-card:hover .desk-penzai {
+            transform: scale(1.05) rotate(-2deg);
+        }
+
+        .desk-penzai-2 {
+            position: absolute;
+            top: 20%;
+            right: 0%;
+            width: 28%;
+            z-index: 12;
+            pointer-events: none; 
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
+            transition: transform 0.3s ease;
+        }
+        .company-card:hover .desk-penzai-2 {
+            transform: scale(1.05) rotate(-2deg);
+        }
     </style>
 </head>
 
-<body>
+<body style="margin:0; padding:0; width:100vw; height:100vh; background-color:#ab9980; ">
+    
     <div class="header">
-        <h1>皮皮虾公司办公室</h1>
+        <h1>🏢 皮皮虾公司办公室</h1>
         <p>欢迎回来！这是您的团队。点击空位可以招募新🦐入职。</p>
-        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-            <button onclick="clearAllMemory()" style="padding:8px 15px; background:#f39c12; color:#fff; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">🧹 一键清空所有员工记忆</button>
-            <button onclick="openCreateCompanyModal()" style="padding:8px 15px; background:#2980b9; color:#fff; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">🏢 一键开设公司</button>
+        <div style="display: flex; justify-content: center; gap: 15px; margin-top: 15px;">
+            <button onclick="clearAllMemory()" class="top-btn top-btn-clear">🧹 一键清空所有员工记忆</button>
+            <button onclick="openCreateCompanyModal()" class="top-btn top-btn-create">🚀 一键开设公司</button>
         </div>
     </div>
 
@@ -719,128 +802,168 @@ class Program
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-            </div>
-        </div>
-
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
-
         <div class="company-card empty-desk">
             <div class="desk-img-container">
                 <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                 <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
+            </div>
+        </div>
+        <div class="company-card empty-desk">
+            <div class="desk-img-container">
+                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
+                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                <img src="penzai2.png" class="desk-penzai">
+                <img src="penzai1.png" class="desk-penzai-2">
             </div>
         </div>
 
@@ -1072,6 +1195,8 @@ class Program
                 <div class="desk-img-container">
                     <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                     <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                    <img src="penzai2.png" class="desk-penzai">
+                    <img src="penzai1.png" class="desk-penzai-2">
                     <div class="report-badge" onclick="openReportById(event, '${deskId}', '${name}')">📄 最新报告</div>
                 </div>
                 <div class="id-card-area" style="pointer-events: none;"> 
