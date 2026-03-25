@@ -36,6 +36,7 @@
 ## 🖼️ 界面预览
 <div align="center" style="width:100%">
   <img src="./cde9a3e6-c02c-415d-84ef-487ed55accfc.png" alt="PiPiClaw 多模型设置（OpenAI 协议兼容，支持多家 LLM）" width="100%" />
+  
 </div
   
 ---
