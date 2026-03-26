@@ -19,17 +19,11 @@ namespace PiPiClaw.Team;
 [JsonSerializable(typeof(CreateCompanyReq))]
 [JsonSerializable(typeof(NodeInfoTemplate))]
 [JsonSerializable(typeof(List<NodeInfoTemplate>))]
-[JsonSerializable(typeof(CompanySetupResult))]
 internal partial class AppJsonContext : JsonSerializerContext { }
 public class CreateCompanyReq
 {
     public string? Description { get; set; }
     public string? MasterNodeUrl { get; set; }
-}
-public class CompanySetupResult
-{
-    public string? Profile { get; set; }
-    public List<NodeInfoTemplate>? Employees { get; set; }
 }
 public class NodeInfoTemplate
 {
@@ -59,7 +53,7 @@ public class NodeInfo
 // 2. 修改配置类
 public class AppConfig
 {
-    public string? CompanyProfile { get; set; }
+    // Key 为姓名，Value 改为 NodeInfo 对象
     public Dictionary<string, NodeInfo> PeerNodes { get; set; } = new();
 }
 
@@ -131,8 +125,8 @@ class Program
                     await stream.CopyToAsync(res.OutputStream);
                 }
                 else
-                {
-
+                { 
+                
                 }
             }
             // 3. 配置文件接口 GET /api/config
@@ -213,7 +207,8 @@ class Program
                     await writer.WriteAsync(errMsg + "|||END|||");
                 }
             }
-            else if ((path == "/api/status" || path == "/api/history" || path == "/api/tasks") && req.HttpMethod == "GET")
+            // 6. 状态轮询转发 /api/status 与 历史记录转发 /api/history
+            else if ((path == "/api/status" || path == "/api/history") && req.HttpMethod == "GET")
             {
                 string username = Uri.UnescapeDataString(req.Headers["X-Username"] ?? "");
                 if (!_config.PeerNodes.TryGetValue(username, out var nodeInfo) || string.IsNullOrEmpty(nodeInfo.Url))
@@ -362,26 +357,33 @@ class Program
                 // 👉 2. 把它塞给大模型，命令它用这个地址去改本地配置，最后再吐出带这个地址的 JSON
                 var prompt = $@"老板下达了开设新公司的指令，业务描述：【{reqData.Description}】。
 请你作为一个高级HR兼架构师，完成以下连串任务：
-1. 编排一个包含 1 - 21 个核心员工的团队，生成他们的名字和岗位头衔。
+1. 编排一个包含不多于 21 个核心员工的团队，生成他们的名字和岗位头衔。
 2. 注意：所有生成员工的 Url 必须全部统一填为 ""{targetUrl}""。
-3. 调用你的本地工具，读取并修改你自己的 `appsettings.json`，把这些新员工信息补充到你的 `PeerNodes` 字典中。
-4. 彻底修改完你自己的配置后，请在最终回复中，**只输出**一个合法的 JSON 数组，供中控台同步使用。绝不要有任何多余的废话和 Markdown 标记。
-5. 编写一段详细的【公司简介与对接指南】（包含对接流程、谁负责什么业务、如何协作，使用 Markdown 排版）。
-格式严格如下：
-{{
-    ""Profile"": ""这里填写你生成的 Markdown 格式的公司简介与对接指南（注意：JSON 字符串中的换行必须转义为 \\n，确保整个 JSON 格式合法）"",
-    ""Employees"": [
-        {{ ""name"": ""员工姓名"", ""Role"": ""岗位头衔"", ""Description"": ""负责的具体能力与工作任务说明"", ""Url"": ""{targetUrl}"" }}
-    ]
+3. 调用你的本地工具，读取并修改你自己的 `appsettings.json`，把这些新员工信息补充到你的 `PeerNodes` 字典中,PeerNodes 字典格式如下。
+""PeerNodes"": {{
+    ""陈智远"": {{
+      ""Name"": ""陈智远"",
+      ""Url"": ""http://ddns.work:5050"",
+      ""Role"": ""首席执行官 CEO"",
+      ""Description"": ""负责公司整体战略规划、业务发展方向决策、重大合作伙伴关系建立、投融资事务管理，统筹公司各部门协同运作，对董事会负责""
+    }}
 }}
+4. 彻底修改完你自己的配置后，请在最终回复中，**只输出**一个合法的 JSON 数组，供中控台同步使用。绝不要有任何多余的废话和 Markdown 标记。
+格式严格如下：
+[
+  {{ ""name"": ""员工姓名"", ""Role"": ""岗位头衔"", ""Description"": ""负责的具体能力与工作任务说明"", ""Url"": ""{targetUrl}"" }}
+]
 注意：json字段不能省略必须严谨
 ";
 
 
 
+                // 构造给皮皮虾的请求，使用符合 AOT 的 ChatRequest 强类型
                 var chatReq = new ChatRequest { message = prompt, modelIndex = 0 };
                 using var agentReq = new HttpRequestMessage(HttpMethod.Post, callAgentUrl.TrimEnd('/') + "/api/chat");
                 agentReq.Headers.Add("X-Username", Uri.EscapeDataString("Team中控"));
+
+                // 严格使用 AOT 序列化
                 agentReq.Content = new StringContent(JsonSerializer.Serialize(chatReq, typeof(ChatRequest), AppJsonContext.Default), Encoding.UTF8, "application/json");
 
                 try
@@ -390,7 +392,7 @@ class Program
                     agentRes.EnsureSuccessStatusCode();
 
                     var agentResStr = await agentRes.Content.ReadAsStringAsync();
-                    string finalJson = "{}";
+                    string finalJson = "[]";
 
                     var parts = agentResStr.Split(new[] { "|||END|||" }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var part in parts)
@@ -406,40 +408,34 @@ class Program
                         catch { }
                     }
 
-                    // 👉 【核心修改】：现在截取大括号 {} 而不是中括号 []
+                    // 暴力清洗大模型可能带上的 markdown 标记
                     finalJson = finalJson.Replace("```json", "").Replace("```", "").Trim();
-                    int startIndex = finalJson.IndexOf('{');
-                    int endIndex = finalJson.LastIndexOf('}');
+                    int startIndex = finalJson.IndexOf('[');
+                    int endIndex = finalJson.LastIndexOf(']');
                     if (startIndex >= 0 && endIndex > startIndex)
                     {
                         finalJson = finalJson.Substring(startIndex, endIndex - startIndex + 1);
                     }
 
-                    var setupResult = JsonSerializer.Deserialize(finalJson, typeof(CompanySetupResult), AppJsonContext.Default) as CompanySetupResult;
+                    // 👉 3. Team 中控解析大模型吐回来的终极 JSON，同步配置
+                    var templates = JsonSerializer.Deserialize(finalJson, typeof(List<NodeInfoTemplate>), AppJsonContext.Default) as List<NodeInfoTemplate>;
 
-                    if (setupResult != null)
+                    if (templates != null && templates.Count > 0)
                     {
-                        // 【核心修改 1】：把大模型写好的公司简介塞进全局配置
-                        _config.CompanyProfile = setupResult.Profile;
-
-                        if (setupResult.Employees != null && setupResult.Employees.Count > 0)
+                        foreach (var t in templates)
                         {
-                            foreach (var t in setupResult.Employees)
+                            if (!string.IsNullOrEmpty(t.name))
                             {
-                                if (!string.IsNullOrEmpty(t.name))
-                                {
-                                    _config.PeerNodes[t.name] = new NodeInfo { Name = t.name, Url = t.Url, Role = t.Role, Description = t.Description };
-                                }
+                                // 直接用大模型分配好的 url 和 role 同步进 Team
+                                _config.PeerNodes[t.name] = new NodeInfo { Name = t.name, Url = t.Url, Role = t.Role, Description = t.Description };
                             }
                         }
+                        // Team 把自己的 team_config.json 写盘
                         File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
                     }
 
-                    // 提取简介（防止为空），并作为返回值带回给前端
-                    string safeProfile = JsonSerializer.Serialize(setupResult?.Profile ?? "HR太懒，没有留下任何对接指南...", AppJsonContext.Default.String);
-
                     res.ContentType = "application/json; charset=utf-8";
-                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes($"{{\"status\":\"ok\", \"profile\": {safeProfile}}}"));
+                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
                 }
                 catch (Exception ex)
                 {
@@ -449,8 +445,7 @@ class Program
             }
             else if (path == "/api/bankruptcy" && req.HttpMethod == "POST")
             {
-                _config.PeerNodes.Clear();
-                _config.CompanyProfile = null;
+                _config.PeerNodes.Clear(); 
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
                 res.ContentType = "application/json; charset=utf-8";
                 await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
@@ -492,90 +487,33 @@ class Program
             align-items: center;
         }
 
-        .task-badge {
-            display: none;
-            position: absolute;
-            bottom: 7%;
-            left: 8px;
-            z-index: 20;
-            background: #f3e5f5;
-            color: #8e44ad;
-            border: 1px solid #e1bee7;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 10px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            pointer-events: auto;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-        }
-        .task-badge:hover {
-            background: #e1bee7;
-            transform: scale(1.05);
-        }
-
-
-        /* 顶部左右分栏容器 */
-        .header-container {
+        .header {
             width: 100vw;
             box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+            text-align: center;
             margin-bottom: 30px;
-            padding: 20px 30px;
-            background: rgba(255, 255, 255, 0.35);
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.35); /* 半透明玻璃质感 */
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
             border-bottom: 1px solid rgba(255, 255, 255, 0.6);
-            color: #4a3f35;
+            color: #4a3f35; /* 配合背景的深咖啡色 */
         }
-        @media (min-width: 900px) {
-            .header-container {
-                flex-direction: row;
-                align-items: stretch;
-            }
-        }
-        .header-left {
-            flex: 0 0 auto;
-            min-width: 350px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-        .header-left h1 {
+        .header h1 {
             margin: 0 0 8px 0;
             font-size: 2.2rem;
             text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
             letter-spacing: 2px;
         }
-        .header-left p {
+        .header p {
             margin: 0;
             font-size: 1.05rem;
             color: #5c4e40;
             font-weight: 600;
         }
 
-        /* 右侧的对接指南看板 */
-        .guide-right {
-            flex: 1;
-            background: rgba(255, 255, 255, 0.6);
-            border-radius: 12px;
-            padding: 15px 20px;
-            max-height: 180px; /* 限制高度出滚动条，不把下面工位挤没 */
-            overflow-y: auto;
-            border: 1px solid rgba(255, 255, 255, 0.9);
-            box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
-            text-align: left;
-        }
-        .guide-right::-webkit-scrollbar { width: 6px; }
-        .guide-right::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
-        .guide-right h1, .guide-right h2, .guide-right h3 { margin-top: 0; margin-bottom: 8px; font-size: 1.2rem; color: #333;}
-        .guide-right p { margin-top: 0; margin-bottom: 10px; font-size: 0.95rem; color: #444; line-height: 1.5; }
-        .guide-right ul, .guide-right ol { margin-top: 0; padding-left: 20px; font-size: 0.95rem; color: #444;}
-
+        /* --- 新增: 顶部按钮专属样式 --- */
         .top-btn {
             padding: 10px 20px;
             border: none;
@@ -639,7 +577,7 @@ class Program
             border-radius: 14px;
             padding: 8px 14px;
             font-size: 8px;
-            font-weight: 800;
+            font-weight: 300;
             color: #475569;
             max-width: 90%;
             z-index: 100;
@@ -933,21 +871,13 @@ class Program
 
 <body style="margin:0; padding:0; width:100vw; height:100vh; background-color:#ab9980; ">
     
-    <div class="header-container">
-        <div class="header-left">
-            <h1>🏢 皮皮虾公司办公室</h1>
-            <p>欢迎回来！这是您的团队。点击空位可以单招。</p>
-            <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
-                <button onclick="clearAllMemory()" class="top-btn top-btn-clear">🧹 一键清空记忆</button>
-                <button onclick="openCreateCompanyModal()" class="top-btn top-btn-create">🚀 一键开设公司</button>
-                <button onclick="bankruptcy()" class="top-btn" style="background: linear-gradient(135deg, #c0392b, #8e44ad); color:#fff;">💥 一键破产</button>
-            </div>
-        </div>
-
-        <div class="guide-right" id="onboardingGuide">
-            <div style="color: #888; font-style: italic; text-align: center; margin-top: 30px;">
-                暂无公司对接指南。<br>请点击左侧【🚀 一键开设公司】让 HR 自动生成业务蓝图。
-            </div>
+    <div class="header">
+        <h1>🏢 皮皮虾公司办公室</h1>
+        <p>欢迎回来！这是您的团队。点击空位可以招募新🦐入职。</p>
+        <div style="display: flex; justify-content: center; gap: 15px; margin-top: 15px;">
+            <button onclick="clearAllMemory()" class="top-btn top-btn-clear">🧹 一键清空所有员工记忆</button>
+            <button onclick="openCreateCompanyModal()" class="top-btn top-btn-create">🚀 一键开设公司</button>
+            <button onclick="bankruptcy()" class="top-btn" style="background: linear-gradient(135deg, #c0392b, #8e44ad); color:#fff;">💥 一键破产</button>
         </div>
     </div>
 
@@ -1232,25 +1162,11 @@ class Program
         });
 
         window.addEventListener('load', async () => {
-            const guideDiv = document.getElementById('onboardingGuide');
-
-
             try {
-            const res = await fetch('/api/config');
-            if (!res.ok) return;
-            const cfg = await res.json();
+                const res = await fetch('/api/config');
+                if (!res.ok) return;
+                const cfg = await res.json();
 
-            if (cfg.CompanyProfile && guideDiv) {
-                // 【核心修复】：把大模型生成的字面量 "\n" 强制转换成真实的网页换行符
-                const realMd = cfg.CompanyProfile.replace(/\\n/g, '\n');
-
-                if (typeof marked !== 'undefined') {
-                    // 兼容新老版本的 marked 解析调用
-                    guideDiv.innerHTML = marked.parse ? marked.parse(realMd) : marked(realMd);
-                } else {
-                    guideDiv.innerHTML = `<pre style="white-space:pre-wrap; font-family:inherit;">${realMd}</pre>`;
-                }
-            }
                 if (cfg.PeerNodes) {
                     const desks = document.querySelectorAll('.company-card');
                     let index = 0;
@@ -1345,8 +1261,7 @@ class Program
                 });
 
                 if (res.ok) {
-                    const data = await res.json();
-                    alert("🎉 招募完毕，公司对接指南已生成！");
+                    alert("🎉 招募完毕，员工已入职！");
                     location.reload(); 
                 } else {
                     alert("❌ 失败！请检查节点是否存活。");
@@ -1400,7 +1315,6 @@ class Program
                     <img src="penzai2.png" class="desk-penzai">
                     <img src="penzai1.png" class="desk-penzai-2">
                     <div class="report-badge" style="display: block !important;" onclick="openReportById(event, '${deskId}', '${name}')">📄 工作日志</div>
-                    <div class="task-badge" onclick="openNodeTasks(event, '${name}')">⏰ 任务(0)</div>
                 </div>
                 <div class="id-card-area" style="pointer-events: none;"> 
                     <p class="id-card-name">${name}</p>
@@ -1448,10 +1362,6 @@ class Program
                         headers: { 'X-Username': encodeURIComponent(name) }
                     });
 
-
-
-
-
                         if (res.ok) {
                         const data = await res.json();
                         if (data.isWorking) {
@@ -1481,23 +1391,6 @@ class Program
                             }
                         }
                     }
-
-                fetch('/api/tasks', { headers: { 'X-Username': encodeURIComponent(name) } })
-                    .then(r => r.ok ? r.json() : [])
-                    .then(tasks => {
-                        const pending = (tasks || []).filter(t => t.status === 'pending');
-                        const taskBadge = desk.querySelector('.task-badge');
-                        if (taskBadge) {
-                            if (pending.length > 0) {
-                                taskBadge.style.display = 'block';
-                                taskBadge.innerText = `⏰ 任务(${pending.length})`;
-                            } else {
-                                taskBadge.style.display = 'none';
-                            }
-                        }
-                    }).catch(() => {});
-
-
                 } catch (e) {
                     // 节点不通
                     bubble.classList.remove('thinking', 'done');
@@ -1688,33 +1581,6 @@ class Program
 
             } catch (e) {
                 console.error('任务派发异常:', e);
-            }
-        }
-
-        async function openNodeTasks(event, empName) {
-            event.stopPropagation(); // 阻止触发工位点击
-            try {
-                const res = await fetch('/api/tasks', { headers: { 'X-Username': encodeURIComponent(empName) } });
-                if (res.ok) {
-                    const tasks = await res.json();
-                    const pending = (tasks || []).filter(t => t.status === 'pending');
-                    if (pending.length === 0) {
-                        alert(`【${empName}】当前没有挂起的任务。`);
-                        return;
-                    }
-                    // 拼接任务详情供展示
-                    let taskList = pending.map(t => {
-                        const time = new Date(t.execute_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
-                        const loop = t.interval_minutes > 0 ? ` (每${t.interval_minutes}分钟)` : '';
-                        return `[${time}]${loop} - ${t.user_intent}`;
-                    }).join('\n\n');
-
-                    alert(`【${empName}】当前的挂起任务：\n\n${taskList}`);
-                } else {
-                    alert(`无法获取【${empName}】的任务状态。`);
-                }
-            } catch (e) {
-                alert(`请求异常，无法连接到节点。`);
             }
         }
     </script>
