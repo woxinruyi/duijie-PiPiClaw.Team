@@ -59,7 +59,7 @@ public class NodeInfo
 // 2. 修改配置类
 public class AppConfig
 {
-    // Key 为姓名，Value 改为 NodeInfo 对象
+    public string? CompanyProfile { get; set; }
     public Dictionary<string, NodeInfo> PeerNodes { get; set; } = new();
 }
 
@@ -213,8 +213,7 @@ class Program
                     await writer.WriteAsync(errMsg + "|||END|||");
                 }
             }
-            // 6. 状态轮询转发 /api/status 与 历史记录转发 /api/history
-            else if ((path == "/api/status" || path == "/api/history") && req.HttpMethod == "GET")
+            else if ((path == "/api/status" || path == "/api/history" || path == "/api/tasks") && req.HttpMethod == "GET")
             {
                 string username = Uri.UnescapeDataString(req.Headers["X-Username"] ?? "");
                 if (!_config.PeerNodes.TryGetValue(username, out var nodeInfo) || string.IsNullOrEmpty(nodeInfo.Url))
@@ -416,16 +415,21 @@ class Program
                         finalJson = finalJson.Substring(startIndex, endIndex - startIndex + 1);
                     }
 
-                    // 👉 3. Team 中控解析带 Profile 的终极 JSON
                     var setupResult = JsonSerializer.Deserialize(finalJson, typeof(CompanySetupResult), AppJsonContext.Default) as CompanySetupResult;
 
-                    if (setupResult != null && setupResult.Employees != null && setupResult.Employees.Count > 0)
+                    if (setupResult != null)
                     {
-                        foreach (var t in setupResult.Employees)
+                        // 【核心修改 1】：把大模型写好的公司简介塞进全局配置
+                        _config.CompanyProfile = setupResult.Profile;
+
+                        if (setupResult.Employees != null && setupResult.Employees.Count > 0)
                         {
-                            if (!string.IsNullOrEmpty(t.name))
+                            foreach (var t in setupResult.Employees)
                             {
-                                _config.PeerNodes[t.name] = new NodeInfo { Name = t.name, Url = t.Url, Role = t.Role, Description = t.Description };
+                                if (!string.IsNullOrEmpty(t.name))
+                                {
+                                    _config.PeerNodes[t.name] = new NodeInfo { Name = t.name, Url = t.Url, Role = t.Role, Description = t.Description };
+                                }
                             }
                         }
                         File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
@@ -446,6 +450,7 @@ class Program
             else if (path == "/api/bankruptcy" && req.HttpMethod == "POST")
             {
                 _config.PeerNodes.Clear();
+                _config.CompanyProfile = null;
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
                 res.ContentType = "application/json; charset=utf-8";
                 await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
@@ -487,7 +492,28 @@ class Program
             align-items: center;
         }
 
-
+        .task-badge {
+            display: none;
+            position: absolute;
+            bottom: 7%;
+            left: 8px;
+            z-index: 20;
+            background: #f3e5f5;
+            color: #8e44ad;
+            border: 1px solid #e1bee7;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            pointer-events: auto;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+        .task-badge:hover {
+            background: #e1bee7;
+            transform: scale(1.05);
+        }
 
 
         /* 顶部左右分栏容器 */
@@ -613,7 +639,7 @@ class Program
             border-radius: 14px;
             padding: 8px 14px;
             font-size: 8px;
-            font-weight: 300;
+            font-weight: 800;
             color: #475569;
             max-width: 90%;
             z-index: 100;
@@ -1206,21 +1232,25 @@ class Program
         });
 
         window.addEventListener('load', async () => {
-            const profileInfo = localStorage.getItem('companyProfile');
             const guideDiv = document.getElementById('onboardingGuide');
-            if (profileInfo && guideDiv) {
-                if (typeof marked !== 'undefined') {
-                    guideDiv.innerHTML = marked.parse(profileInfo);
-                } else {
-                    guideDiv.innerHTML = `<pre style="white-space:pre-wrap; font-family:inherit;">${profileInfo}</pre>`;
-                }
-            }
+
 
             try {
-                const res = await fetch('/api/config');
-                if (!res.ok) return;
-                const cfg = await res.json();
+            const res = await fetch('/api/config');
+            if (!res.ok) return;
+            const cfg = await res.json();
 
+            if (cfg.CompanyProfile && guideDiv) {
+                // 【核心修复】：把大模型生成的字面量 "\n" 强制转换成真实的网页换行符
+                const realMd = cfg.CompanyProfile.replace(/\\n/g, '\n');
+
+                if (typeof marked !== 'undefined') {
+                    // 兼容新老版本的 marked 解析调用
+                    guideDiv.innerHTML = marked.parse ? marked.parse(realMd) : marked(realMd);
+                } else {
+                    guideDiv.innerHTML = `<pre style="white-space:pre-wrap; font-family:inherit;">${realMd}</pre>`;
+                }
+            }
                 if (cfg.PeerNodes) {
                     const desks = document.querySelectorAll('.company-card');
                     let index = 0;
@@ -1316,10 +1346,6 @@ class Program
 
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.profile) {
-                        localStorage.setItem('companyProfile', data.profile);
-                    }
-
                     alert("🎉 招募完毕，公司对接指南已生成！");
                     location.reload(); 
                 } else {
@@ -1374,6 +1400,7 @@ class Program
                     <img src="penzai2.png" class="desk-penzai">
                     <img src="penzai1.png" class="desk-penzai-2">
                     <div class="report-badge" style="display: block !important;" onclick="openReportById(event, '${deskId}', '${name}')">📄 工作日志</div>
+                    <div class="task-badge" onclick="openNodeTasks(event, '${name}')">⏰ 任务(0)</div>
                 </div>
                 <div class="id-card-area" style="pointer-events: none;"> 
                     <p class="id-card-name">${name}</p>
@@ -1421,6 +1448,10 @@ class Program
                         headers: { 'X-Username': encodeURIComponent(name) }
                     });
 
+
+
+
+
                         if (res.ok) {
                         const data = await res.json();
                         if (data.isWorking) {
@@ -1450,6 +1481,23 @@ class Program
                             }
                         }
                     }
+
+                fetch('/api/tasks', { headers: { 'X-Username': encodeURIComponent(name) } })
+                    .then(r => r.ok ? r.json() : [])
+                    .then(tasks => {
+                        const pending = (tasks || []).filter(t => t.status === 'pending');
+                        const taskBadge = desk.querySelector('.task-badge');
+                        if (taskBadge) {
+                            if (pending.length > 0) {
+                                taskBadge.style.display = 'block';
+                                taskBadge.innerText = `⏰ 任务(${pending.length})`;
+                            } else {
+                                taskBadge.style.display = 'none';
+                            }
+                        }
+                    }).catch(() => {});
+
+
                 } catch (e) {
                     // 节点不通
                     bubble.classList.remove('thinking', 'done');
@@ -1640,6 +1688,33 @@ class Program
 
             } catch (e) {
                 console.error('任务派发异常:', e);
+            }
+        }
+
+        async function openNodeTasks(event, empName) {
+            event.stopPropagation(); // 阻止触发工位点击
+            try {
+                const res = await fetch('/api/tasks', { headers: { 'X-Username': encodeURIComponent(empName) } });
+                if (res.ok) {
+                    const tasks = await res.json();
+                    const pending = (tasks || []).filter(t => t.status === 'pending');
+                    if (pending.length === 0) {
+                        alert(`【${empName}】当前没有挂起的任务。`);
+                        return;
+                    }
+                    // 拼接任务详情供展示
+                    let taskList = pending.map(t => {
+                        const time = new Date(t.execute_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+                        const loop = t.interval_minutes > 0 ? ` (每${t.interval_minutes}分钟)` : '';
+                        return `[${time}]${loop} - ${t.user_intent}`;
+                    }).join('\n\n');
+
+                    alert(`【${empName}】当前的挂起任务：\n\n${taskList}`);
+                } else {
+                    alert(`无法获取【${empName}】的任务状态。`);
+                }
+            } catch (e) {
+                alert(`请求异常，无法连接到节点。`);
             }
         }
     </script>
