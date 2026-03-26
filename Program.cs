@@ -19,11 +19,17 @@ namespace PiPiClaw.Team;
 [JsonSerializable(typeof(CreateCompanyReq))]
 [JsonSerializable(typeof(NodeInfoTemplate))]
 [JsonSerializable(typeof(List<NodeInfoTemplate>))]
+[JsonSerializable(typeof(CompanySetupResult))]
 internal partial class AppJsonContext : JsonSerializerContext { }
 public class CreateCompanyReq
 {
     public string? Description { get; set; }
     public string? MasterNodeUrl { get; set; }
+}
+public class CompanySetupResult
+{
+    public string? Profile { get; set; }
+    public List<NodeInfoTemplate>? Employees { get; set; }
 }
 public class NodeInfoTemplate
 {
@@ -125,8 +131,8 @@ class Program
                     await stream.CopyToAsync(res.OutputStream);
                 }
                 else
-                { 
-                
+                {
+
                 }
             }
             // 3. 配置文件接口 GET /api/config
@@ -357,25 +363,26 @@ class Program
                 // 👉 2. 把它塞给大模型，命令它用这个地址去改本地配置，最后再吐出带这个地址的 JSON
                 var prompt = $@"老板下达了开设新公司的指令，业务描述：【{reqData.Description}】。
 请你作为一个高级HR兼架构师，完成以下连串任务：
-1. 编排一个包含不多于 21 个核心员工的团队，生成他们的名字和岗位头衔。
+1. 编排一个包含 1 - 21 个核心员工的团队，生成他们的名字和岗位头衔。
 2. 注意：所有生成员工的 Url 必须全部统一填为 ""{targetUrl}""。
 3. 调用你的本地工具，读取并修改你自己的 `appsettings.json`，把这些新员工信息补充到你的 `PeerNodes` 字典中。
 4. 彻底修改完你自己的配置后，请在最终回复中，**只输出**一个合法的 JSON 数组，供中控台同步使用。绝不要有任何多余的废话和 Markdown 标记。
+5. 编写一段详细的【公司简介与对接指南】（包含对接流程、谁负责什么业务、如何协作，使用 Markdown 排版）。
 格式严格如下：
-[
-  {{ ""name"": ""员工姓名"", ""Role"": ""岗位头衔"", ""Description"": ""负责的具体能力与工作任务说明"", ""Url"": ""{targetUrl}"" }}
-]
+{{
+    ""Profile"": ""这里填写你生成的 Markdown 格式的公司简介与对接指南（注意：JSON 字符串中的换行必须转义为 \\n，确保整个 JSON 格式合法）"",
+    ""Employees"": [
+        {{ ""name"": ""员工姓名"", ""Role"": ""岗位头衔"", ""Description"": ""负责的具体能力与工作任务说明"", ""Url"": ""{targetUrl}"" }}
+    ]
+}}
 注意：json字段不能省略必须严谨
 ";
 
 
 
-                // 构造给皮皮虾的请求，使用符合 AOT 的 ChatRequest 强类型
                 var chatReq = new ChatRequest { message = prompt, modelIndex = 0 };
                 using var agentReq = new HttpRequestMessage(HttpMethod.Post, callAgentUrl.TrimEnd('/') + "/api/chat");
                 agentReq.Headers.Add("X-Username", Uri.EscapeDataString("Team中控"));
-
-                // 严格使用 AOT 序列化
                 agentReq.Content = new StringContent(JsonSerializer.Serialize(chatReq, typeof(ChatRequest), AppJsonContext.Default), Encoding.UTF8, "application/json");
 
                 try
@@ -384,7 +391,7 @@ class Program
                     agentRes.EnsureSuccessStatusCode();
 
                     var agentResStr = await agentRes.Content.ReadAsStringAsync();
-                    string finalJson = "[]";
+                    string finalJson = "{}";
 
                     var parts = agentResStr.Split(new[] { "|||END|||" }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var part in parts)
@@ -400,34 +407,35 @@ class Program
                         catch { }
                     }
 
-                    // 暴力清洗大模型可能带上的 markdown 标记
+                    // 👉 【核心修改】：现在截取大括号 {} 而不是中括号 []
                     finalJson = finalJson.Replace("```json", "").Replace("```", "").Trim();
-                    int startIndex = finalJson.IndexOf('[');
-                    int endIndex = finalJson.LastIndexOf(']');
+                    int startIndex = finalJson.IndexOf('{');
+                    int endIndex = finalJson.LastIndexOf('}');
                     if (startIndex >= 0 && endIndex > startIndex)
                     {
                         finalJson = finalJson.Substring(startIndex, endIndex - startIndex + 1);
                     }
 
-                    // 👉 3. Team 中控解析大模型吐回来的终极 JSON，同步配置
-                    var templates = JsonSerializer.Deserialize(finalJson, typeof(List<NodeInfoTemplate>), AppJsonContext.Default) as List<NodeInfoTemplate>;
+                    // 👉 3. Team 中控解析带 Profile 的终极 JSON
+                    var setupResult = JsonSerializer.Deserialize(finalJson, typeof(CompanySetupResult), AppJsonContext.Default) as CompanySetupResult;
 
-                    if (templates != null && templates.Count > 0)
+                    if (setupResult != null && setupResult.Employees != null && setupResult.Employees.Count > 0)
                     {
-                        foreach (var t in templates)
+                        foreach (var t in setupResult.Employees)
                         {
                             if (!string.IsNullOrEmpty(t.name))
                             {
-                                // 直接用大模型分配好的 url 和 role 同步进 Team
                                 _config.PeerNodes[t.name] = new NodeInfo { Name = t.name, Url = t.Url, Role = t.Role, Description = t.Description };
                             }
                         }
-                        // Team 把自己的 team_config.json 写盘
                         File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
                     }
 
+                    // 提取简介（防止为空），并作为返回值带回给前端
+                    string safeProfile = JsonSerializer.Serialize(setupResult?.Profile ?? "HR太懒，没有留下任何对接指南...", AppJsonContext.Default.String);
+
                     res.ContentType = "application/json; charset=utf-8";
-                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
+                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes($"{{\"status\":\"ok\", \"profile\": {safeProfile}}}"));
                 }
                 catch (Exception ex)
                 {
@@ -437,7 +445,7 @@ class Program
             }
             else if (path == "/api/bankruptcy" && req.HttpMethod == "POST")
             {
-                _config.PeerNodes.Clear(); 
+                _config.PeerNodes.Clear();
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
                 res.ContentType = "application/json; charset=utf-8";
                 await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
@@ -479,33 +487,69 @@ class Program
             align-items: center;
         }
 
-        .header {
+
+
+
+        /* 顶部左右分栏容器 */
+        .header-container {
             width: 100vw;
             box-sizing: border-box;
-            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
             margin-bottom: 30px;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.35); /* 半透明玻璃质感 */
+            padding: 20px 30px;
+            background: rgba(255, 255, 255, 0.35);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
             border-bottom: 1px solid rgba(255, 255, 255, 0.6);
-            color: #4a3f35; /* 配合背景的深咖啡色 */
+            color: #4a3f35;
         }
-        .header h1 {
+        @media (min-width: 900px) {
+            .header-container {
+                flex-direction: row;
+                align-items: stretch;
+            }
+        }
+        .header-left {
+            flex: 0 0 auto;
+            min-width: 350px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .header-left h1 {
             margin: 0 0 8px 0;
             font-size: 2.2rem;
             text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
             letter-spacing: 2px;
         }
-        .header p {
+        .header-left p {
             margin: 0;
             font-size: 1.05rem;
             color: #5c4e40;
             font-weight: 600;
         }
 
-        /* --- 新增: 顶部按钮专属样式 --- */
+        /* 右侧的对接指南看板 */
+        .guide-right {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 12px;
+            padding: 15px 20px;
+            max-height: 180px; /* 限制高度出滚动条，不把下面工位挤没 */
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
+            text-align: left;
+        }
+        .guide-right::-webkit-scrollbar { width: 6px; }
+        .guide-right::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+        .guide-right h1, .guide-right h2, .guide-right h3 { margin-top: 0; margin-bottom: 8px; font-size: 1.2rem; color: #333;}
+        .guide-right p { margin-top: 0; margin-bottom: 10px; font-size: 0.95rem; color: #444; line-height: 1.5; }
+        .guide-right ul, .guide-right ol { margin-top: 0; padding-left: 20px; font-size: 0.95rem; color: #444;}
+
         .top-btn {
             padding: 10px 20px;
             border: none;
@@ -863,13 +907,21 @@ class Program
 
 <body style="margin:0; padding:0; width:100vw; height:100vh; background-color:#ab9980; ">
     
-    <div class="header">
-        <h1>🏢 皮皮虾公司办公室</h1>
-        <p>欢迎回来！这是您的团队。点击空位可以招募新🦐入职。</p>
-        <div style="display: flex; justify-content: center; gap: 15px; margin-top: 15px;">
-            <button onclick="clearAllMemory()" class="top-btn top-btn-clear">🧹 一键清空所有员工记忆</button>
-            <button onclick="openCreateCompanyModal()" class="top-btn top-btn-create">🚀 一键开设公司</button>
-            <button onclick="bankruptcy()" class="top-btn" style="background: linear-gradient(135deg, #c0392b, #8e44ad); color:#fff;">💥 一键破产</button>
+    <div class="header-container">
+        <div class="header-left">
+            <h1>🏢 皮皮虾公司办公室</h1>
+            <p>欢迎回来！这是您的团队。点击空位可以单招。</p>
+            <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+                <button onclick="clearAllMemory()" class="top-btn top-btn-clear">🧹 一键清空记忆</button>
+                <button onclick="openCreateCompanyModal()" class="top-btn top-btn-create">🚀 一键开设公司</button>
+                <button onclick="bankruptcy()" class="top-btn" style="background: linear-gradient(135deg, #c0392b, #8e44ad); color:#fff;">💥 一键破产</button>
+            </div>
+        </div>
+
+        <div class="guide-right" id="onboardingGuide">
+            <div style="color: #888; font-style: italic; text-align: center; margin-top: 30px;">
+                暂无公司对接指南。<br>请点击左侧【🚀 一键开设公司】让 HR 自动生成业务蓝图。
+            </div>
         </div>
     </div>
 
@@ -1154,6 +1206,16 @@ class Program
         });
 
         window.addEventListener('load', async () => {
+            const profileInfo = localStorage.getItem('companyProfile');
+            const guideDiv = document.getElementById('onboardingGuide');
+            if (profileInfo && guideDiv) {
+                if (typeof marked !== 'undefined') {
+                    guideDiv.innerHTML = marked.parse(profileInfo);
+                } else {
+                    guideDiv.innerHTML = `<pre style="white-space:pre-wrap; font-family:inherit;">${profileInfo}</pre>`;
+                }
+            }
+
             try {
                 const res = await fetch('/api/config');
                 if (!res.ok) return;
@@ -1253,7 +1315,12 @@ class Program
                 });
 
                 if (res.ok) {
-                    alert("🎉 招募完毕，员工已入职！");
+                    const data = await res.json();
+                    if (data.profile) {
+                        localStorage.setItem('companyProfile', data.profile);
+                    }
+
+                    alert("🎉 招募完毕，公司对接指南已生成！");
                     location.reload(); 
                 } else {
                     alert("❌ 失败！请检查节点是否存活。");
