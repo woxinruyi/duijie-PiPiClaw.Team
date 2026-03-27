@@ -737,7 +737,7 @@ class Program
 
         .id-card-area {
             position: absolute;
-            bottom: 63px;
+            bottom: 28%;
             right: 24%;
             width: 25%;
             height: 15%;
@@ -749,18 +749,18 @@ class Program
         }
 
         .id-card-name {
-            width: 24px;
-            font-size: clamp(5px, 1.3vw, 8px);
+            width: 100%;
+            font-size: clamp(10px, 4vw, 10px);
             font-weight: bold;
             color: #000000;
             margin: 4px 0px 2px 0px;
             line-height: 1.2;
             white-space: nowrap;
-            text-align: left;
+            text-align: right;
         }
 
         .id-card-role {
-            font-size: clamp(6px, 1.5vw, 9px);
+            font-size: clamp(9px, 3.2vw, 10px);
             color: #555555;
             margin: 0;
             line-height: 1.2;
@@ -891,10 +891,31 @@ class Program
             display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
             z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(5px);
         }
+
+        /* 默认样式（优先适配手机端：极致贴边显示） */
         .report-content {
-            background: #fff; width: 90%; max-width: 800px; height: 80vh;
-            border-radius: 12px; display: flex; flex-direction: column; overflow: hidden;
+            background: #fff; 
+            width: 96%;           /* 手机端宽度占比 96%，左右留白极小 */
+            height: 96vh;         /* 手机端高度占比 96vh，上下贴边 */
+            max-width: 1200px;    /* 放宽最大限制，允许电脑端变大 */
+            border-radius: 12px; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        /* 电脑/平板端样式（屏幕宽度大于 768px 时生效） */
+        @media (min-width: 768px) {
+            .id-card-area {
+                bottom: 28%; /* 电脑端视觉微调 */
+            }
+            .id-card-name {
+                font-size: clamp(8px, 1.2vw, 8px);
+            }
+            .id-card-role {
+                font-size: clamp(6px, 1vw, 8px);
+            }
         }
         .report-header {
             padding: 15px 20px; background: #f8f9fa; border-bottom: 1px solid #eee;
@@ -1285,20 +1306,27 @@ class Program
                         })
                         .then(r => r.ok ? r.json() : null)
                         .then(history => {
-                            if (history && history.length > 0) {
-                                // 检查记录里是否有大模型（Assistant）的有效回复
-                                const hasReport = history.some(m => 
-                                    (m.role?.toLowerCase() === 'assistant' || m.Role?.toLowerCase() === 'assistant') && 
-                                    (m.content || m.Content)
-                                );
 
-                                // 如果有历史报告，就把刷新后默认的“摸鱼中”强行改成“有报告”状态
-                                if (hasReport) {
-                                    bubble.classList.remove('thinking');
-                                    bubble.classList.add('done');
-                                    bubble.innerText = '上帝我工作完成了！(查看)';
+                            if (history && history.length > 0) {
+                                reportContent = "";
+                                history.forEach(m => {
+                                    const role = (m.role || m.Role || "").toLowerCase();
+                                    const content = m.content || m.Content;
+
+                                    if (role === 'user' && content) {
+                                        // 老板派发的任务
+                                        reportContent += `### 🎯 任务指令\n> ${content}\n\n`;
+                                    } else if (role === 'assistant' && content) {
+                                        // 员工执行的报告
+                                        reportContent += `### 📝 汇报结果\n${content}\n\n---\n\n`;
+                                    }
+                                });
+
+                                if (reportContent === "") {
+                                    reportContent = "该员工当前只有底层调用记录，暂无最终文本报告。";
                                 }
                             }
+
                         }).catch(e => {
                             console.warn(`[状态恢复] 无法拉取 ${empName} 的历史记录`, e);
                         });
@@ -1530,14 +1558,23 @@ class Program
                     const history = await res.json();
                     let reportContent = "该员工当前没有任何工作记录。";
 
-                        if (history && history.length > 0) {
-                            // 兼容 C# 的 PascalCase 和 JS 的 camelCase，且忽略 Assistant 大小写
-                            const lastMsg = history.slice().reverse().find(m => 
-                                (m.role?.toLowerCase() === 'assistant' || m.Role?.toLowerCase() === 'assistant') && 
-                                (m.content || m.Content)
-                        );
-                        if (lastMsg) {
-                            reportContent = lastMsg.content || lastMsg.Content;
+                    if (history && history.length > 0) {
+                        let fullLog = "";
+                        history.forEach(m => {
+                            const role = (m.role || m.Role || "").toLowerCase();
+                            const content = m.content || m.Content;
+
+                            if (role === 'user' && content) {
+                                fullLog += `### 🎯 任务指令\n> ${content}\n\n`;
+                            } else if (role === 'assistant' && content) {
+                                fullLog += `### 📝 汇报结果\n${content}\n\n---\n\n`;
+                            }
+                        });
+
+                        if (fullLog !== "") {
+                            reportContent = fullLog;
+                        } else {
+                            reportContent = "该员工当前只有系统底层调用记录，暂无最终文本报告。";
                         }
                     }
 
