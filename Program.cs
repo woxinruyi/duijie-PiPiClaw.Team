@@ -19,6 +19,9 @@ namespace PiPiClaw.Team;
 [JsonSerializable(typeof(CreateCompanyReq))]
 [JsonSerializable(typeof(NodeInfoTemplate))]
 [JsonSerializable(typeof(List<NodeInfoTemplate>))]
+[JsonSerializable(typeof(Dictionary<string, NodeInfo>))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(CompanySetupResult))]
 internal partial class AppJsonContext : JsonSerializerContext { }
 public class CreateCompanyReq
@@ -62,6 +65,8 @@ public class NodeInfo
 public class AppConfig
 {
     public string? CompanyProfile { get; set; }
+
+    public string MasterNodeUrl { get; set; } = "http://127.0.0.1:5050";
     public Dictionary<string, NodeInfo> PeerNodes { get; set; } = new();
 }
 
@@ -104,7 +109,35 @@ class Program
             _ = Task.Run(() => HandleRequestAsync(context)); // 异步处理不阻塞主线程
         }
     }
+    // 【新增】强行覆盖到底层的同步方法
+    private static async Task SyncPeerNodesToMasterAsync()
+    {
+        string targetUrl = string.IsNullOrEmpty(_config.MasterNodeUrl) ? "http://127.0.0.1:5050" : _config.MasterNodeUrl;
+        try
+        {
+            // 1. 获取底层节点的完整配置
+            var getReq = new HttpRequestMessage(HttpMethod.Get, targetUrl.TrimEnd('/') + "/api/config");
+            using var getRes = await _httpClient.SendAsync(getReq);
+            if (!getRes.IsSuccessStatusCode) return;
 
+            var masterCfgStr = await getRes.Content.ReadAsStringAsync();
+            var masterCfgDict = JsonSerializer.Deserialize(masterCfgStr, AppJsonContext.Default.DictionaryStringJsonElement) ?? new();
+
+            // 2. 将我们的员工名单强行塞入底层的 PeerNodes 节点中
+            masterCfgDict["PeerNodes"] = JsonSerializer.SerializeToElement(_config.PeerNodes, AppJsonContext.Default.DictionaryStringNodeInfo);
+
+            // 3. 写回底层节点
+            var postReq = new HttpRequestMessage(HttpMethod.Post, targetUrl.TrimEnd('/') + "/api/config");
+            postReq.Content = new StringContent(JsonSerializer.Serialize(masterCfgDict, AppJsonContext.Default.DictionaryStringJsonElement), Encoding.UTF8, "application/json");
+            await _httpClient.SendAsync(postReq);
+
+            Console.WriteLine($"[强绑定] 已将最新通讯录 ({_config.PeerNodes.Count} 人) 实时同步到底层节点 {targetUrl}！");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[强绑定失败] 底层节点离线或配置异常: {ex.Message}");
+        }
+    }
     private static async Task HandleRequestAsync(HttpListenerContext context)
     {
         var req = context.Request;
@@ -140,6 +173,25 @@ class Program
             // 3. 配置文件接口 GET /api/config
             else if (path == "/api/config" && req.HttpMethod == "GET")
             {
+                // 每次打开 Team 网页，都动态从底层拉取员工名单，确保与底层绝对一致
+                string targetUrl = string.IsNullOrEmpty(_config.MasterNodeUrl) ? "http://127.0.0.1:5050" : _config.MasterNodeUrl;
+                try
+                {
+                    var proxyReq = new HttpRequestMessage(HttpMethod.Get, targetUrl.TrimEnd('/') + "/api/config");
+                    using var proxyRes = await _httpClient.SendAsync(proxyReq);
+                    if (proxyRes.IsSuccessStatusCode)
+                    {
+                        var jsonStr = await proxyRes.Content.ReadAsStringAsync();
+                        var masterCfg = JsonSerializer.Deserialize(jsonStr, AppJsonContext.Default.DictionaryStringJsonElement);
+                        if (masterCfg != null && masterCfg.TryGetValue("PeerNodes", out var peerNodesEl))
+                        {
+                            var freshNodes = JsonSerializer.Deserialize(peerNodesEl.GetRawText(), AppJsonContext.Default.DictionaryStringNodeInfo);
+                            if (freshNodes != null) _config.PeerNodes = freshNodes;
+                        }
+                    }
+                }
+                catch { /* 如果底层挂了，安全容错使用 Team 内存上次留存的记录 */ }
+
                 res.ContentType = "application/json; charset=utf-8";
                 var json = JsonSerializer.Serialize(_config, AppJsonContext.Default.AppConfig);
                 byte[] buffer = Encoding.UTF8.GetBytes(json);
@@ -154,11 +206,11 @@ class Program
                 var newConfig = JsonSerializer.Deserialize<AppConfig>(body, AppJsonContext.Default.AppConfig);
                 if (newConfig != null)
                 {
-                    _config = newConfig; // 更新内存
-
-                    // 【核心修复】：将前端传来的最新配置写进本地文件！
+                    _config = newConfig; // 更新 Team 本地内存
                     File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, AppJsonContext.Default.AppConfig), Encoding.UTF8);
-                    Console.WriteLine($"[配置中心] 已更新并持久化员工通讯录。当前在职人数: {_config.PeerNodes.Count}");
+
+                    // 【核心联动】：在 Team 页面无论你招人/修改/开除，立刻回推写入 PiPiClaw 底层
+                    await SyncPeerNodesToMasterAsync();
                 }
                 res.StatusCode = 200;
             }
@@ -366,8 +418,7 @@ class Program
 请你作为一个高级HR兼架构师，完成以下连串任务：
 1. 编排一个包含 1 - 21 个核心员工的团队，生成他们的名字和岗位头衔。
 2. 注意：所有生成员工的 Url 必须全部统一填为 ""{targetUrl}""。
-3. 调用你的本地工具，读取并修改你自己的 `appsettings.json`，把这些新员工信息补充到你的 `PeerNodes` 字典中。
-4. 彻底修改完你自己的配置后，请在最终回复中，**只输出**一个合法的 JSON 数组，供中控台同步使用。绝不要有任何多余的废话和 Markdown 标记。
+3. 调用你的本地工具，读取并修改你自己的 `appsettings.json`，把这些新员工信息补充到你的 `PeerNodes` 字典中，PeerNodes 字典格式如下。
 ""PeerNodes"": {{
     ""陈智远"": {{
       ""Name"": ""陈智远"",
@@ -376,8 +427,10 @@ class Program
       ""Description"": ""负责公司整体战略规划、业务发展方向决策、重大合作伙伴关系建立、投融资事务管理，统筹公司各部门协同运作，对董事会负责""
     }}
 }}
+
+4. 彻底修改完你自己的配置后，请在最终回复中，**只输出**一个合法的 JSON 数组，供中控台同步使用。绝不要有任何多余的废话和 Markdown 标记。
 5. 编写一段详细的【公司简介与对接指南】（包含对接流程、谁负责什么业务、如何协作，使用 Markdown 排版）。
-格式严格如下：
+4和5的要求格式严格如下：
 {{
     ""Profile"": ""这里填写你生成的 Markdown 格式的公司简介与对接指南（注意：JSON 字符串中的换行必须转义为 \\n，确保整个 JSON 格式合法）"",
     ""Employees"": [
@@ -450,6 +503,7 @@ class Program
                             }
                         }
                         File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
+                        await SyncPeerNodesToMasterAsync();
                     }
 
                     // 提取简介（防止为空），并作为返回值带回给前端
@@ -469,6 +523,7 @@ class Program
                 _config.PeerNodes.Clear();
                 _config.CompanyProfile = null;
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
+                await SyncPeerNodesToMasterAsync();
                 res.ContentType = "application/json; charset=utf-8";
                 await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
             }
@@ -966,6 +1021,53 @@ class Program
         .company-card:hover .desk-penzai-2 {
             transform: scale(1.05) rotate(-2deg);
         }
+
+
+
+/* --- 新增：HR 招募中的加载动画遮罩 --- */
+.hr-loading-container {
+    display: none; /* 默认隐藏 */
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.85);
+    z-index: 100000; /* 层级设到最高 */
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+.hr-spinner {
+    width: 60px;
+    height: 60px;
+    border: 6px solid #e2e8f0;
+    border-top: 6px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2);
+}
+.hr-loading-text {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 12px;
+    animation: pulsate 1.5s infinite ease-in-out;
+}
+.hr-loading-subtext {
+    font-size: 1rem;
+    color: #7f8c8d;
+    text-align: center;
+    line-height: 1.6;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+@keyframes pulsate {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
     </style>
 </head>
 
@@ -1247,7 +1349,14 @@ class Program
             </div>
         </div>
     </div>
-
+<div id="loadingOverlay" class="hr-loading-container">
+    <div class="hr-spinner"></div>
+    <div class="hr-loading-text">HR 正在拼命招人中...</div>
+    <div class="hr-loading-subtext">
+        这可能需要一些时间来配置公司网络与岗位。<br>
+        我们正在仔细为您组建梦之队，请耐心等待 ☕
+    </div>
+</div>
     <script>
         let currentTargetDesk = null;
         let currentTargetName = '';
@@ -1386,7 +1495,7 @@ class Program
                         if (targetIndex !== null && targetIndex < cfg.Models.length) {
                             select.value = targetIndex;
                         }
-                        status.innerText = "✅ 获取成功！请按需为该员工分配脑容量。";
+                        status.innerText = "✅ 获取成功！请按需为该员工分模型。";
                         return;
                     }
                 }
@@ -1432,36 +1541,34 @@ class Program
             const masterUrl = document.getElementById('masterNodeUrl').value.trim() || 'http://127.0.0.1:5050';
 
             if (!desc) return alert("请先描述业务！");
-            
+
             localStorage.setItem('temp_master_url', masterUrl);
 
-            const btn = document.getElementById('btnConfirmCreate');
-            const originalText = btn.innerText;
-            btn.innerText = "安排入职中...";
-            btn.disabled = true;
+            // 1. 关闭输入表单弹窗
+            closeModal('createCompanyModal');
+            // 2. 显示全屏高大上的加载动画
+            document.getElementById('loadingOverlay').style.display = 'flex';
 
             try {
                 const res = await fetch('/api/create_company', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // 把业务描述和这个唯一的地址传给后端
                     body: JSON.stringify({ description: desc, masterNodeUrl: masterUrl })
                 });
 
                 if (res.ok) {
                     const data = await res.json();
                     alert("🎉 招募完毕，公司对接指南已生成！");
-                    location.reload(); 
+                    location.reload(); // 成功后刷新页面渲染工位
                 } else {
-                    alert("❌ 失败！请检查节点是否存活。");
+                    alert("❌ 失败！请检查节点是否存活或后台日志。");
+                    document.getElementById('loadingOverlay').style.display = 'none';
                 }
             } catch (e) {
                 console.error(e);
                 alert("❌ 网络请求异常。");
-            } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
-            }
+                document.getElementById('loadingOverlay').style.display = 'none';
+            } 
         }
 
         function editEmployee() {
@@ -1636,10 +1743,11 @@ class Program
                             const role = (m.role || m.Role || "").toLowerCase();
                             const content = m.content || m.Content;
 
+                            const timeHtml = m.timestamp || m.Timestamp ? `<span style="font-size:12px; color:#999; font-weight:normal; margin-left:8px;">(${m.timestamp || m.Timestamp})</span>` : "";
                             if (role === 'user' && content) {
-                                fullLog += `### 🎯 任务指令\n> ${content}\n\n`;
+                                fullLog += `### 🎯 任务指令${timeHtml}\n> ${content}\n\n`;
                             } else if (role === 'assistant' && content) {
-                                fullLog += `### 📝 汇报结果\n${content}\n\n---\n\n`;
+                                fullLog += `### 📝 汇报结果${timeHtml}\n${content}\n\n<br><hr style="border: none; border-top: 2px dashed #ccc; margin: 30px 0;"><br>\n\n`;
                             }
                         });
 
