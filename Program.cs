@@ -37,6 +37,7 @@ public class NodeInfoTemplate
     public string? Role { get; set; }
     public string? Url { get; set; }
     public string? Description { get; set; }
+    public int ModelIndex { get; set; } = 0;
 }
 public class ChatRequest
 {
@@ -55,6 +56,7 @@ public class NodeInfo
     [JsonPropertyName("Url")] public string? Url { get; set; }
     [JsonPropertyName("Role")] public string? Role { get; set; }
     [JsonPropertyName("Description")] public string? Description { get; set; }
+    [JsonPropertyName("ModelIndex")] public int ModelIndex { get; set; } = 0;
 }
 // 2. 修改配置类
 public class AppConfig
@@ -436,7 +438,14 @@ class Program
                             {
                                 if (!string.IsNullOrEmpty(t.name))
                                 {
-                                    _config.PeerNodes[t.name] = new NodeInfo { Name = t.name, Url = t.Url, Role = t.Role, Description = t.Description };
+                                    _config.PeerNodes[t.name] = new NodeInfo
+                                    {
+                                        Name = t.name,
+                                        Url = t.Url,
+                                        Role = t.Role,
+                                        Description = t.Description,
+                                        ModelIndex = t.ModelIndex
+                                    };
                                 }
                             }
                         }
@@ -1165,8 +1174,19 @@ class Program
                 style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none;">
             <input type="text" id="recruitDesc" placeholder="能力说明 (如: 负责网络数据抓取)"
                 style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none; font-size:12px;">
-            <input type="text" id="recruitUrl" placeholder="节点URL (如: http://192.168.1.10:5050)"
-                style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none; font-size:12px;">
+            <input type="text" id="recruitUrl" placeholder="节点URL (如: http://127.0.0.1:5050)"
+                style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none; font-size:12px;"
+                onblur="fetchNodeModels()"> <details style="margin-top: 4px; font-size: 13px; color: #666; cursor: pointer;">
+                <summary style="outline: none; font-weight: bold;">⚙️ 高级设置 (单独设置模型)</summary>
+                <div style="margin-top: 8px;">
+                    <label style="display:block; margin-bottom: 4px; font-size:11px;">读取该节点支持的模型并选择：</label>
+                    <select id="recruitModelIndex" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:8px; outline:none;">
+                        <option value="0">默认模型 (0)</option>
+                    </select>
+                    <div id="modelFetchStatus" style="font-size:11px; color:#999; margin-top:4px;">填入上方 URL 后自动连接节点获取...</div>
+                </div>
+            </details>
+
             <div style="display:flex; gap:10px; margin-top:10px;">
                 <button onclick="confirmRecruit()"
                     style="flex:1; padding:10px; background:#333; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">办理入职</button>
@@ -1268,7 +1288,7 @@ class Program
             const res = await fetch('/api/config');
             if (!res.ok) return;
             const cfg = await res.json();
-
+            window.teamConfig = cfg;
             if (cfg.CompanyProfile && guideDiv) {
                 // 【核心修复】：把大模型生成的字面量 "\n" 强制转换成真实的网页换行符
                 const realMd = cfg.CompanyProfile.replace(/\\n/g, '\n');
@@ -1294,7 +1314,6 @@ class Program
                     }
                     console.log(`[初始化] 已成功加载 ${index} 位员工。`);
 
-                    // 👇 2. 【核心修复】：页面刷新后，主动去拉取一次历史记录，恢复气泡的“已有报告”状态
                     for (let i = 0; i < index; i++) {
                         const desk = desks[i];
                         const empName = desk.querySelector('.id-card-name').innerText;
@@ -1336,6 +1355,55 @@ class Program
                 console.error("加载配置失败:", e);
             }
         });
+
+
+
+
+        // 👇 新增：去目标节点拉取它的 appsettings.json 里的 Models 列表
+        async function fetchNodeModels(targetIndex = null) {
+            const url = document.getElementById('recruitUrl').value.trim();
+            const select = document.getElementById('recruitModelIndex');
+            const status = document.getElementById('modelFetchStatus');
+
+            if (!url) return;
+            status.innerText = "🔄 正在跨网络连接节点拉取配置...";
+            select.innerHTML = '<option value="0">默认模型 (0)</option>'; // 先重置保底
+
+            try {
+                const cleanUrl = url.replace(/\/$/, '');
+                const res = await fetch(`${cleanUrl}/api/config`); // 对方底层代码开了 CORS，这里能直接通
+                if (res.ok) {
+                    const cfg = await res.json();
+                    if (cfg.Models && cfg.Models.length > 0) {
+                        select.innerHTML = '';
+                        cfg.Models.forEach((m, idx) => {
+                            const opt = document.createElement('option');
+                            opt.value = idx;
+                            opt.text = m.Model ? `[${idx}] ${m.Model}` : `[${idx}] 未命名配置`;
+                            select.appendChild(opt);
+                        });
+                        // 如果是修改员工信息时回显，把之前存的序号选中
+                        if (targetIndex !== null && targetIndex < cfg.Models.length) {
+                            select.value = targetIndex;
+                        }
+                        status.innerText = "✅ 获取成功！请按需为该员工分配脑容量。";
+                        return;
+                    }
+                }
+                status.innerText = "⚠️ 节点响应正常，但未返回模型列表。";
+            } catch (e) {
+                status.innerText = "❌ 无法连接节点，请检查 URL 是否正确或节点是否已启动。";
+            }
+        }
+
+
+
+
+
+
+
+
+
 
         async function clearAllMemory() {
             if (!confirm("老板，确定要一键清空【所有在职员工】的上下文记忆吗？")) return;
@@ -1409,6 +1477,10 @@ class Program
                     document.getElementById('recruitRole').value = nodeInfo.Role || nodeInfo.role || '';
                     document.getElementById('recruitDesc').value = nodeInfo.Description || nodeInfo.description || '';
                     document.getElementById('recruitUrl').value = nodeInfo.Url || nodeInfo.url || '';
+
+                    const savedIndex = nodeInfo.ModelIndex !== undefined ? nodeInfo.ModelIndex : (nodeInfo.modelIndex || 0);
+                    document.getElementById('recruitModelIndex').value = savedIndex;
+                    fetchNodeModels(savedIndex);
 
                     document.getElementById('recruitModal').querySelector('h3').innerText = '📝 修改员工信息';
                     document.getElementById('recruitModal').style.display = 'flex';
@@ -1597,6 +1669,8 @@ class Program
             const desc = document.getElementById('recruitDesc').value.trim() || '暂无说明';
             const url = document.getElementById('recruitUrl').value.trim();
 
+            const modelIdx = parseInt(document.getElementById('recruitModelIndex').value) || 0;
+
             if (!name) return alert("员工姓名不能为空！");
             renderEmployeeUI(currentTargetDesk, name, role);
 
@@ -1608,9 +1682,8 @@ class Program
                 if (isEditing && originalEditName !== name && cfg.PeerNodes[originalEditName]) {
                     delete cfg.PeerNodes[originalEditName];
                 }
-
-                // 重点：大写属性同步给后端
-                cfg.PeerNodes[name] = { Url: url, Role: role, Description: desc }; 
+                cfg.PeerNodes[name] = { Url: url, Role: role, Description: desc, ModelIndex: modelIdx }; 
+                window.teamConfig = cfg; 
 
                 await fetch('/api/config', {
                     method: 'POST',
@@ -1711,7 +1784,7 @@ class Program
 
             closeModal('taskModal');
 
-            // 提前预设 UI 状态，剩下的变化交给刚刚写的 setInterval 去接管
+            const mIdx = window.teamConfig?.PeerNodes?.[currentTargetName]?.ModelIndex || 0;
             const bubble = currentTargetDesk.querySelector('.chat-bubble');
             if (bubble) {
                 bubble.classList.remove('done');
@@ -1728,7 +1801,7 @@ class Program
                         'Content-Type': 'application/json',
                         'X-Username': encodeURIComponent(currentTargetName)
                     },
-                    body: JSON.stringify({ message: taskContent, modelIndex: 0 })
+                    body: JSON.stringify({ message: taskContent, modelIndex: mIdx })
                 }).catch(e => console.error('长连接断开或异常 (前端轮询接管中):', e));
 
             } catch (e) {
