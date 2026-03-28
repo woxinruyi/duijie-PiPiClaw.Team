@@ -43,6 +43,15 @@
 		<EmbeddedResource Include="penzai2.png" />
 		<EmbeddedResource Include="penzai3.png" />
 		<EmbeddedResource Include="penzai4.png" />
+
+		<EmbeddedResource Include="1.png" />
+		<EmbeddedResource Include="2.png" />
+		<EmbeddedResource Include="3.png" />
+		<EmbeddedResource Include="4.png" />
+		<EmbeddedResource Include="5.png" />
+		<EmbeddedResource Include="6.png" />
+		<EmbeddedResource Include="7.png" />
+		<EmbeddedResource Include="8.png" />
 	</ItemGroup>
 
 </Project>
