@@ -80,7 +80,7 @@ class Program
     private static string _configPath = "team_config.json";
     private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
 
-    const string BossMarketUrl = "http://127.0.0.1:8888";
+    const string BossMarketUrl = "http://ddns.work:8888";
 
     static async Task Main(string[] args)
     {
