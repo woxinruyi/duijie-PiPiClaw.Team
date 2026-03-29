@@ -40,6 +40,7 @@ public class NodeInfoTemplate
     public string? Role { get; set; }
     public string? Url { get; set; }
     public string? Description { get; set; }
+    public string? Resume { get; set; }
     public int ModelIndex { get; set; } = 0;
 }
 public class ChatRequest
@@ -59,6 +60,7 @@ public class NodeInfo
     [JsonPropertyName("Url")] public string? Url { get; set; }
     [JsonPropertyName("Role")] public string? Role { get; set; }
     [JsonPropertyName("Description")] public string? Description { get; set; }
+    [JsonPropertyName("Resume")] public string? Resume { get; set; }
     [JsonPropertyName("ModelIndex")] public int ModelIndex { get; set; } = 0;
 }
 // 2. 修改配置类
@@ -416,7 +418,7 @@ class Program
                 // 👉 2. 把它塞给大模型，命令它用这个地址去改本地配置，最后再吐出带这个地址的 JSON
                 var prompt = $@"老板下达了开设新公司的指令，业务描述：【{reqData.Description}】。
 请你作为一个高级HR兼架构师，完成以下连串任务：
-1. 编排一个包含 1 - 21 个核心员工的团队，生成他们的名字和岗位头衔。
+1. 编排一个包含 1 - 21 个核心员工的团队，生成他们的名字和岗位头衔，以及详细的个人简历（包含专业背景、工作经验、性格特点等）。
 2. 注意：所有生成员工的 Url 必须全部统一填为 ""{targetUrl}""。
 3. 调用你的本地工具，读取并修改你自己的 `appsettings.json`，把这些新员工信息补充到你的 `PeerNodes` 字典中，PeerNodes 字典格式如下。
 ""PeerNodes"": {{
@@ -424,6 +426,7 @@ class Program
       ""Name"": ""陈智远"",
       ""Url"": ""{targetUrl}"",
       ""Role"": ""首席执行官 CEO"",
+      ""Resume"": ""陈智远，清华大学MBA，拥有15年互联网行业高管经验，曾带领两家公司成功上市。性格沉稳果断，擅长战略布局与团队资源整合。"",
       ""Description"": ""负责公司整体战略规划、业务发展方向决策、重大合作伙伴关系建立、投融资事务管理，统筹公司各部门协同运作，对董事会负责""
     }}
 }}
@@ -434,7 +437,7 @@ class Program
 {{
     ""Profile"": ""这里填写你生成的 Markdown 格式的公司简介与对接指南（注意：JSON 字符串中的换行必须转义为 \\n，确保整个 JSON 格式合法）"",
     ""Employees"": [
-        {{ ""name"": ""员工姓名"", ""Role"": ""岗位头衔"", ""Description"": ""负责的具体能力与工作任务说明"", ""Url"": ""{targetUrl}"" }}
+        {{ ""name"": ""员工姓名"", ""Role"": ""岗位头衔"", ""Description"": ""负责的具体能力与工作任务说明"",""Resume"": ""个人详细信息，简历介绍。"", ""Url"": ""{targetUrl}"" }}
     ]
 }}
 注意：json字段不能省略必须严谨
@@ -497,6 +500,7 @@ class Program
                                         Url = t.Url,
                                         Role = t.Role,
                                         Description = t.Description,
+                                        Resume = t.Resume,
                                         ModelIndex = t.ModelIndex
                                     };
                                 }
@@ -1274,6 +1278,8 @@ class Program
                 style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none; font-weight:bold;">
             <input type="text" id="recruitRole" placeholder="岗位头衔 (如: 爬虫工程师)"
                 style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none;">
+            <textarea id="recruitResume" placeholder="个人简历/详细介绍 (如: 拥有10年爬虫经验，精通Python，性格严谨...)"
+                style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none; font-size:12px; height:60px; resize:none; font-family:inherit;"></textarea>
             <input type="text" id="recruitDesc" placeholder="能力说明 (如: 负责网络数据抓取)"
                 style="padding:10px; border:1px solid #ddd; border-radius:8px; outline:none; font-size:12px;">
             <input type="text" id="recruitUrl" placeholder="节点URL (如: http://127.0.0.1:5050)"
@@ -1583,6 +1589,7 @@ class Program
                     // 🌟 兼容大小写读取属性
                     document.getElementById('recruitRole').value = nodeInfo.Role || nodeInfo.role || '';
                     document.getElementById('recruitDesc').value = nodeInfo.Description || nodeInfo.description || '';
+                    document.getElementById('recruitResume').value = nodeInfo.Resume || nodeInfo.resume || '';
                     document.getElementById('recruitUrl').value = nodeInfo.Url || nodeInfo.url || '';
 
                     const savedIndex = nodeInfo.ModelIndex !== undefined ? nodeInfo.ModelIndex : (nodeInfo.modelIndex || 0);
@@ -1802,6 +1809,7 @@ class Program
             const name = document.getElementById('recruitName').value.trim();
             const role = document.getElementById('recruitRole').value.trim() || '新晋员工';
             const desc = document.getElementById('recruitDesc').value.trim() || '暂无说明';
+            const resume = document.getElementById('recruitResume').value.trim() || '';
             const url = document.getElementById('recruitUrl').value.trim();
 
             const modelIdx = parseInt(document.getElementById('recruitModelIndex').value) || 0;
@@ -1817,7 +1825,7 @@ class Program
                 if (isEditing && originalEditName !== name && cfg.PeerNodes[originalEditName]) {
                     delete cfg.PeerNodes[originalEditName];
                 }
-                cfg.PeerNodes[name] = { Url: url, Role: role, Description: desc, ModelIndex: modelIdx }; 
+                cfg.PeerNodes[name] = { Url: url, Role: role, Description: desc,Resume: resume, ModelIndex: modelIdx }; 
                 window.teamConfig = cfg; 
 
                 await fetch('/api/config', {
@@ -1938,7 +1946,7 @@ class Program
                     },
                     body: JSON.stringify({ message: taskContent, modelIndex: mIdx })
                 }).catch(e => console.error('长连接断开或异常 (前端轮询接管中):', e));
-
+                   
             } catch (e) {
                 console.error('任务派发异常:', e);
             }
