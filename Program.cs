@@ -1386,178 +1386,8 @@ class Program
         </div>
     </div>
 
-    <div class="desk-grid">
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-        <div class="company-card empty-desk">
-            <div class="desk-img-container">
-                <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
-                <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
-                <img src="penzai2.png" class="desk-penzai">
-                <img src="penzai1.png" class="desk-penzai-2">
-            </div>
-        </div>
-
-
-
+    <div class="desk-grid" id="mainDeskGrid">
+        
     </div>
     
     <div id="recruitModal"
@@ -1707,28 +1537,74 @@ class Program
             document.getElementById(id).style.display = 'none';
         }
 
-        // 初始化：为所有工位绑定点击事件
-        document.querySelectorAll('.company-card').forEach(desk => {
-            desk.style.cursor = 'pointer'; // 增加点击手势反馈
-            desk.addEventListener('click', () => {
-                // 如果是空工位或离线状态 -> 招人
-                if (desk.classList.contains('empty-desk') || desk.classList.contains('away')) {
-                    currentTargetDesk = desk;
-                    document.getElementById('recruitName').value = '';
-                    document.getElementById('recruitRole').value = '';
-                    document.getElementById('recruitUrl').value = '';
-                    document.getElementById('recruitModal').style.display = 'flex';
-                }
-                // 如果是在岗状态 -> 派发任务 或 开除
-                else if (desk.classList.contains('at-work')) {
-                    currentTargetDesk = desk;
-                    currentTargetName = desk.querySelector('.id-card-name').innerText;
-                    document.getElementById('taskModalTitle').innerText = `管理员工：${currentTargetName}`;
-                    document.getElementById('taskInput').value = '';
-                    document.getElementById('taskModal').style.display = 'flex';
-                }
-            });
-        });
+// 动态计算并适配网格宽度 (手机端受 CSS 控制永远两列)
+function adjustGridColumns() {
+    const grid = document.getElementById('mainDeskGrid');
+    const totalDesks = grid.children.length;
+
+    if (window.innerWidth >= 768) {
+        if (totalDesks > 21) {
+            // 超出 21 个，按比例缩小卡片的最小宽度，让屏幕全摆下
+            const newMinWidth = Math.max(80, Math.floor(180 * (21 / totalDesks)));
+            grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${newMinWidth}px, 1fr))`;
+        } else {
+            // 少于 21 个，保持原本的宽度
+            grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(180px, 1fr))`;
+        }
+    } else {
+        // 手机端清空内联样式，回归 CSS 的 repeat(2, 1fr)
+        grid.style.gridTemplateColumns = ''; 
+    }
+}
+window.addEventListener('resize', adjustGridColumns);
+
+// 动态创建一个工位 DOM
+function createDeskElement() {
+    const desk = document.createElement('div');
+    desk.className = 'company-card empty-desk';
+    desk.innerHTML = `
+        <div class="desk-img-container">
+            <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
+            <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+            <img src="penzai2.png" class="desk-penzai">
+            <img src="penzai1.png" class="desk-penzai-2">
+        </div>
+    `;
+    desk.style.cursor = 'pointer';
+
+    desk.addEventListener('click', () => {
+        if (desk.classList.contains('empty-desk') || desk.classList.contains('away')) {
+            currentTargetDesk = desk;
+            document.getElementById('recruitName').value = '';
+            document.getElementById('recruitRole').value = '';
+            document.getElementById('recruitUrl').value = '';
+            document.getElementById('recruitModal').style.display = 'flex';
+        } else if (desk.classList.contains('at-work')) {
+            currentTargetDesk = desk;
+            currentTargetName = desk.querySelector('.id-card-name').innerText;
+            document.getElementById('taskModalTitle').innerText = `管理员工：${currentTargetName}`;
+            document.getElementById('taskInput').value = '';
+            document.getElementById('taskModal').style.display = 'flex';
+        }
+    });
+    document.getElementById('mainDeskGrid').appendChild(desk);
+    adjustGridColumns();
+    return desk;
+}
+
+// 确保办公室里永远有 1 个空桌子用来招人
+function ensureOneEmptyDesk() {
+    const grid = document.getElementById('mainDeskGrid');
+    const emptyDesks = Array.from(grid.querySelectorAll('.company-card.empty-desk'));
+
+    if (emptyDesks.length === 0) {
+        createDeskElement();
+    } else if (emptyDesks.length > 1) {
+        // 如果空桌子多了(比如刚开除了员工)，就清理掉，保持只留一个
+        for (let i = 1; i < emptyDesks.length; i++) emptyDesks[i].remove();
+        adjustGridColumns();
+    }
+}
 
         window.addEventListener('load', async () => {
             const guideDiv = document.getElementById('onboardingGuide');
@@ -1763,22 +1639,23 @@ class Program
                 }
             }
                 if (cfg.PeerNodes) {
-                    const desks = document.querySelectorAll('.company-card');
-                    let index = 0;
+                const grid = document.getElementById('mainDeskGrid');
+                grid.innerHTML = ''; // 清除可能残留的旧工位
 
-                    // 1. 遍历保存的通讯录，依次填入工位
-                    for (const [name, info] of Object.entries(cfg.PeerNodes)) {
-                        if (name === 'Team中控') continue;
-                        if (index < desks.length) {
-                            const role = info.Role || info.role || '资深员工';
-                            renderEmployeeUI(desks[index], name, role);
-                            index++;
-                        }
-                    }
-                    console.log(`[初始化] 已成功加载 ${index} 位员工。`);
+                let index = 0;
+                for (const [name, info] of Object.entries(cfg.PeerNodes)) {
+                    const desk = createDeskElement(); // 动态生成工位
+                    const role = info.Role || info.role || '资深员工';
+                    renderEmployeeUI(desk, name, role);
+                    index++;
+                }
+                console.log(`[初始化] 已成功加载 ${index} 位员工。`);
 
-                    for (let i = 0; i < index; i++) {
-                        const desk = desks[i];
+                ensureOneEmptyDesk(); // 自动补齐 1 个空位用来招募新员工
+
+                // 遍历所有在岗员工的 DOM 拉取记录
+                const allActiveDesks = document.querySelectorAll('.company-card.at-work');
+                allActiveDesks.forEach(desk => {
                         const empName = desk.querySelector('.id-card-name').innerText;
                         const bubble = desk.querySelector('.chat-bubble');
 
@@ -1812,7 +1689,7 @@ class Program
                         }).catch(e => {
                             console.warn(`[状态恢复] 无法拉取 ${empName} 的历史记录`, e);
                         });
-                    }
+                    });
                 }
             } catch (e) {
                 console.error("加载配置失败:", e);
@@ -2495,6 +2372,7 @@ async function openLicenseModal() {
 
             if (!name) return alert("员工姓名不能为空！");
             renderEmployeeUI(currentTargetDesk, name, role);
+            ensureOneEmptyDesk(); // 填坑完毕后，自动在末尾再加一个空桌子
 
             try {
                 let res = await fetch('/api/config');
@@ -2566,9 +2444,12 @@ async function openLicenseModal() {
                 <div class="desk-img-container">
                     <img src="img_shrimp_working.png" alt="皮皮虾办公" class="shrimp-desk-img">
                     <img src="img_empty_desk.png" alt="空桌子" class="empty-desk-img">
+                    <img src="penzai2.png" class="desk-penzai">
+                    <img src="penzai1.png" class="desk-penzai-2">
                 </div>
             `;
 
+            ensureOneEmptyDesk(); // 自动清理多余的空桌子并重新排版
             closeModal('taskModal');
         }
         async function clearEmployeeMemory() {
