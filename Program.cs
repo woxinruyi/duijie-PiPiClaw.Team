@@ -24,6 +24,10 @@ namespace PiPiClaw.Team;
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(CompanySetupResult))]
 [JsonSerializable(typeof(List<JsonElement>))]
+[JsonSerializable(typeof(ProjectBoard))]
+[JsonSerializable(typeof(ProjectTask))]
+[JsonSerializable(typeof(List<ProjectTask>))]
+
 internal partial class AppJsonContext : JsonSerializerContext { }
 public class CreateCompanyReq
 {
@@ -48,6 +52,8 @@ public class ChatRequest
 {
     public string? message { get; set; }
     public int modelIndex { get; set; }
+
+    public string? sop { get; set; }
 }
 
 public class ChatResponse
@@ -64,7 +70,21 @@ public class NodeInfo
     [JsonPropertyName("Resume")] public string? Resume { get; set; }
     [JsonPropertyName("ModelIndex")] public int ModelIndex { get; set; } = 0;
 }
-// 2. 修改配置类
+public class ProjectTask
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("assignee")] public string Assignee { get; set; } = ""; // 派给哪个皮皮虾
+    [JsonPropertyName("status")] public string Status { get; set; } = "todo"; // todo, doing, done
+    [JsonPropertyName("update_time")] public string UpdateTime { get; set; } = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+    [JsonPropertyName("result")] public string Result { get; set; } = "";
+}
+
+public class ProjectBoard
+{
+    [JsonPropertyName("project_name")] public string? ProjectName { get; set; }
+    [JsonPropertyName("tasks")] public List<ProjectTask> Tasks { get; set; } = [];
+}
 public class AppConfig
 {
     public string? CompanyProfile { get; set; }
@@ -73,6 +93,10 @@ public class AppConfig
     public bool HasLicense { get; set; } = false;
     public string MasterNodeUrl { get; set; } = "http://127.0.0.1:5050";
     public Dictionary<string, NodeInfo> PeerNodes { get; set; } = new();
+
+    public string? CompanySOP { get; set; }
+
+    public List<ProjectBoard> Projects { get; set; } = new();
 }
 
 class Program
@@ -229,6 +253,7 @@ class Program
             // 5. 聊天流式接口 POST /api/chat (已联动真正的节点端)
             else if (path == "/api/chat" && req.HttpMethod == "POST")
             {
+
                 string username = req.Headers["X-Username"] ?? "未知员工";
                 username = Uri.UnescapeDataString(username);
 
@@ -253,9 +278,10 @@ class Program
                 try
                 {
                     var proxyReq = new HttpRequestMessage(HttpMethod.Post, targetUrl.TrimEnd('/') + "/api/chat");
-
-                    // 这里为了避免中文导致 Header 报错，进行一下 URL 编码，把真实的员工名传过去
                     proxyReq.Headers.Add("X-Username", Uri.EscapeDataString(username));
+                    string currentTeamUrl = $"http://{req.Url?.Host}:{req.Url?.Port}";
+                    proxyReq.Headers.Add("X-Team-Url", Uri.EscapeDataString(currentTeamUrl));
+
                     proxyReq.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
                     // 关键：使用全局 _httpClient 和 ResponseHeadersRead
@@ -711,6 +737,78 @@ class Program
                     }
                 }
                 catch { res.StatusCode = 500; }
+            }
+            else if (path == "/api/board" && req.HttpMethod == "GET")
+            {
+                res.ContentType = "application/json; charset=utf-8";
+                // 👉 直接返回列表
+                var boardData = _config.Projects ?? new List<ProjectBoard>();
+                await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(boardData, AppJsonContext.Default.ListProjectBoard)));
+            }
+            else if (path == "/api/board" && req.HttpMethod == "POST")
+            {
+                using var reader = new StreamReader(req.InputStream);
+                string body = await reader.ReadToEndAsync();
+                try
+                {
+                    var newBoard = JsonSerializer.Deserialize(body, typeof(ProjectBoard), AppJsonContext.Default) as ProjectBoard;
+                    if (newBoard != null)
+                    {
+                        _config.Projects ??= new List<ProjectBoard>();
+
+                        // 情况A：只更新单个任务状态 (普通员工调用)
+                        if (newBoard.Tasks != null && newBoard.Tasks.Count == 1 && string.IsNullOrEmpty(newBoard.ProjectName))
+                        {
+                            var updateTask = newBoard.Tasks[0];
+                            // 👉 跨所有项目全局搜索这个任务 ID
+                            var existingTask = _config.Projects.SelectMany(p => p.Tasks).FirstOrDefault(t => t.Id == updateTask.Id);
+                            if (existingTask != null)
+                            {
+                                existingTask.Status = updateTask.Status;
+                                existingTask.UpdateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                                if (!string.IsNullOrEmpty(updateTask.Result)) existingTask.Result = updateTask.Result;
+                            }
+                        }
+                        // 情况B：新增拆解任务 (CEO调用)
+                        else if (!string.IsNullOrEmpty(newBoard.ProjectName))
+                        {
+                            // 👉 按项目名查找，存在则追加，不存在则新建项目
+                            var existingProject = _config.Projects.FirstOrDefault(p => p.ProjectName == newBoard.ProjectName);
+                            if (existingProject == null)
+                            {
+                                _config.Projects.Add(newBoard);
+                            }
+                            else
+                            {
+                                if (newBoard.Tasks != null)
+                                {
+                                    foreach (var t in newBoard.Tasks)
+                                    {
+                                        if (string.IsNullOrEmpty(t.Id)) t.Id = Guid.NewGuid().ToString("N").Substring(0, 8);
+                                        t.UpdateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                                        if (string.IsNullOrWhiteSpace(t.Assignee)) t.Assignee = "待认领";
+
+                                        var existingT = existingProject.Tasks.FirstOrDefault(x => x.Title == t.Title || x.Id == t.Id);
+                                        if (existingT == null) existingProject.Tasks.Add(t);
+                                        else existingT.Status = t.Status;
+                                    }
+                                }
+                            }
+                        }
+                        File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
+                    }
+                    res.StatusCode = 200;
+                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
+                }
+                catch { res.StatusCode = 500; }
+            }
+            else if (path == "/api/board" && req.HttpMethod == "DELETE")
+            {
+                // 👉 一键清空所有项目
+                _config.Projects = [];
+                File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, typeof(AppConfig), AppJsonContext.Default), Encoding.UTF8);
+                res.ContentType = "application/json; charset=utf-8";
+                await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
             }
             else
             {
@@ -1357,7 +1455,35 @@ class Program
     transform: translateY(-2px);
     box-shadow: 0 6px 15px rgba(16, 185, 129, 0.35);
 }
+
+/* --- 替换后的项目列表样式 --- */
+.project-list-container { display: flex; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto; margin-top: 15px; padding-right: 5px; }
+.project-list-container::-webkit-scrollbar { width: 6px; }
+.project-list-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.project-group { background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02); transition: all 0.2s ease; }
+.project-group:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
+.project-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: #f8fafc; cursor: pointer; transition: background 0.2s; border-bottom: 1px solid transparent; user-select: none; }
+.project-header:hover { background: #f1f5f9; }
+.project-header.expanded { border-bottom-color: #e2e8f0; }
+.project-title { font-weight: bold; font-size: 1.05em; color: #1e293b; display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.project-progress-container { flex: 1; margin: 0 20px; max-width: 300px; display: flex; flex-direction: column; gap: 4px; }
+.progress-bar-bg { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; width: 100%; }
+.progress-bar-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #10b981); transition: width 0.4s ease; }
+.project-meta { font-size: 0.85em; color: #64748b; font-weight: bold; min-width: 80px; text-align: right; }
+.task-list { padding: 5px 20px 15px 20px; background: #fff; }
+.task-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px dashed #f1f5f9; transition: background 0.2s; }
+.task-row:last-child { border-bottom: none; }
+.task-row:hover { background: #fafafa; }
+.task-title { font-size: 0.9em; color: #334155; flex: 1; padding-right: 15px; font-weight: 500; }
+.task-badges { display: flex; gap: 8px; align-items: center; font-size: 0.75em; flex-shrink: 0; }
+.badge { padding: 4px 8px; border-radius: 6px; font-weight: bold; }
+.badge.todo { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+.badge.doing { background: #eff6ff; color: #3b82f6; border: 1px solid #bfdbfe; }
+.badge.done { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.badge.assignee { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; display: flex; align-items: center; gap: 4px; }
+
     </style>
+
 </head>
 
 <body style="margin:0; padding:0; width:100vw; height:100vh; background-color:#ab9980; ">
@@ -1374,6 +1500,8 @@ class Program
             <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
                 <button onclick="clearAllMemory()" class="top-btn top-btn-clear">🧹 一键清空记忆</button>
                 <button onclick="openCreateCompanyModal()" class="top-btn top-btn-create">🚀 一键开设公司</button>
+                <button onclick="openBoardModal()" class="top-btn" style="background: linear-gradient(135deg, #2980b9, #8e44ad); color:#fff; box-shadow: 0 4px 10px rgba(41,128,185,0.3);">📊 项目看板</button>
+                <button onclick="openSopModal()" class="top-btn" style="background: linear-gradient(135deg, #34495e, #2c3e50); color:#fff;">📜 公司制度/SOP</button>
                 <button onclick="openBossMarket()" class="top-btn" style="background: linear-gradient(135deg, #27ae60, #2ecc71); color:#fff; box-shadow: 0 4px 10px rgba(39,174,96,0.3);">💼 BOSS 直聘</button>
                 <button onclick="bankruptcy()" class="top-btn" style="background: linear-gradient(135deg, #c0392b, #8e44ad); color:#fff;">💥 一键破产</button>
             </div>
@@ -1518,6 +1646,38 @@ class Program
     </div>
 </div>
 
+<div id="sopModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+    <div style="background:#fff; padding:25px; border-radius:15px; width:450px; display:flex; flex-direction:column; gap:12px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 5px 0; text-align:center; color:#333;">📜 公司制度与工作流 (SOP)</h3>
+        <p style="font-size:12px; color:#666; margin:0;">在此制定的规则将作为最高准则，在每次派发任务时强制注入给每一位员工的潜意识中。告诉他们谁该干什么，不该干什么。</p>
+
+        <textarea id="sopInput" placeholder="例如：&#10;1. 我们的目标是写小说并发布。&#10;2. CEO只负责拆解大纲，不要自己写。&#10;3. 作家必须根据大纲写出完整的章节，不要只给方案。&#10;4. 必须有产出结果！禁止员工之间互相踢皮球！"
+            style="padding:12px; border:1px solid #ddd; border-radius:8px; outline:none; height:180px; resize:none; font-family:inherit; font-size:13px; line-height:1.5;"></textarea>
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button onclick="saveSopConfig()" style="flex:1; padding:10px; background:#2c3e50; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">颁布制度</button>
+            <button onclick="closeModal('sopModal')" style="flex:1; padding:10px; background:#eee; color:#666; border:none; border-radius:8px; cursor:pointer;">取消</button>
+        </div>
+    </div>
+</div>
+
+
+<div id="boardModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10050; align-items:center; justify-content:center; backdrop-filter:blur(5px);">
+    <div style="background:#f8fafc; padding:25px; border-radius:15px; height:85vh; width:85vw; display:flex; flex-direction:column; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px;">
+            <h3 style="margin:0; color:#1e293b; display: flex; align-items: center; gap: 8px;">
+                📊 项目看板: <span id="boardProjectName" style="color:#3b82f6;">正在同步进度...</span>
+            </h3>
+            <div style="display:flex; gap: 10px;">
+                <button onclick="deleteProject()" style="padding:6px 12px; background:#e74c3c; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold;">🗑️ 清空</button>
+                <button onclick="closeModal('boardModal')" style="background:none; border:none; font-size:1.4em; cursor:pointer; color:#94a3b8;">✖</button>
+            </div>
+        </div>
+
+        <div id="boardProjectList" class="project-list-container">
+            </div>
+    </div>
+</div>
 
 
 <div id="loadingOverlay" class="hr-loading-container">
@@ -1592,7 +1752,173 @@ function createDeskElement() {
     return desk;
 }
 
-// 确保办公室里永远有 1 个空桌子用来招人
+
+function openSopModal() {
+    // 弹窗打开时，回显当前保存的 SOP
+    document.getElementById('sopInput').value = window.teamConfig.CompanySOP || '';
+    document.getElementById('sopModal').style.display = 'flex';
+}
+
+async function saveSopConfig() {
+    const newSop = document.getElementById('sopInput').value.trim();
+    if (!window.teamConfig) return;
+
+    window.teamConfig.CompanySOP = newSop;
+
+    try {
+        const res = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(window.teamConfig)
+        });
+        if (res.ok) {
+            alert("✅ 公司制度已全网同步颁布！下一次安排任务时将生效。");
+            closeModal('sopModal');
+        } else {
+            alert("❌ 同步失败，请检查网络。");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("❌ 网络请求异常。");
+    }
+}
+
+async function openBoardModal() {
+    document.getElementById('boardModal').style.display = 'flex';
+    await refreshBoard();
+}
+
+async function refreshBoard() {
+    try {
+        const res = await fetch('/api/board');
+        if (!res.ok) return;
+        const projects = await res.json(); 
+
+        const listContainer = document.getElementById('boardProjectList');
+        listContainer.innerHTML = '';
+
+        if (projects && projects.length > 0) {
+            document.getElementById('boardProjectName').innerText = `共 ${projects.length} 个并行项目`;
+
+            projects.forEach((p, index) => {
+                const projName = escapeHtml(p.project_name || p.ProjectName);
+                let tasksHtml = '';
+                let totalTasks = 0;
+                let doneTasks = 0;
+
+                // 构建任务列表
+                if (p.tasks && p.tasks.length > 0) {
+                    totalTasks = p.tasks.length;
+                    p.tasks.forEach(t => {
+                        const statusClass = (t.status || t.Status || 'todo').toLowerCase();
+                        if (statusClass === 'done') doneTasks++;
+
+                        let statusText = '待办 (TODO)';
+                        if (statusClass === 'doing') statusText = '进行中 (DOING)';
+                        if (statusClass === 'done') statusText = '已完成 (DONE)';
+
+                        // 格式化时间去秒
+                        const updateTime = (t.update_time || t.UpdateTime || '').substring(5, 16);
+                        let resultHtml = '';
+                        const taskResult = t.result || t.Result;
+                        if (taskResult) {
+                            resultHtml = `
+                            <div style="margin-top: 8px; padding: 10px 14px; background: rgba(16, 185, 129, 0.05); border-left: 3px solid #10b981; border-radius: 6px; font-size: 0.85em; color: #475569; line-height: 1.5;">
+                                <strong style="color: #059669; display: block; margin-bottom: 4px;">🎯 交付总结：</strong>
+                                <span style="white-space: pre-wrap; font-family: inherit;">${escapeHtml(taskResult)}</span>
+                            </div>`;
+                        }
+
+                        tasksHtml += `
+                        <div class="task-row" style="display:flex; flex-direction:column; align-items:stretch; padding: 12px 0;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div class="task-title">▪ ${escapeHtml(t.title || t.Title)}</div>
+                                <div class="task-badges">
+                                    <span class="badge assignee">👤 ${escapeHtml(t.assignee || t.Assignee)}</span>
+                                    <span class="badge ${statusClass}">${statusText}</span>
+                                    <span style="color:#94a3b8; width: 85px; text-align: right;">${updateTime}</span>
+                                </div>
+                            </div>
+                            ${resultHtml}
+                        </div>`;
+                    });
+                } else {
+                    tasksHtml = '<div style="text-align:center; color:#94a3b8; padding:20px 0;">该项目下暂无拆解的子任务。</div>';
+                }
+
+                // 计算进度百分比
+                let progress = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
+
+                // 默认展开第一个项目，其余折叠
+                const isExpanded = index === 0 ? 'expanded' : '';
+                const displayStyle = index === 0 ? 'style="display:block;"' : 'style="display:none;"';
+                const toggleIcon = index === 0 ? '▼' : '▶';
+
+                // 组装整个项目的 HTML
+                const projHtml = `
+                <div class="project-group">
+                    <div class="project-header ${isExpanded}" onclick="toggleProject(this)">
+                        <div class="project-title">
+                            <span class="toggle-icon" style="color:#94a3b8; font-size:0.8em; width:15px; display:inline-block;">${toggleIcon}</span>
+                            📁 ${projName}
+                        </div>
+                        <div class="project-progress-container">
+                            <div style="font-size:0.75em; color:#64748b; margin-bottom:2px; display:flex; justify-content:space-between;">
+                                <span>整体进度</span>
+                                <span>${doneTasks} / ${totalTasks} 任务</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" style="width: ${progress}%;"></div>
+                            </div>
+                        </div>
+                        <div class="project-meta">
+                            ${progress}%
+                        </div>
+                    </div>
+                    <div class="task-list" ${displayStyle}>
+                        ${tasksHtml}
+                    </div>
+                </div>`;
+
+                listContainer.innerHTML += projHtml;
+            });
+        } else {
+            document.getElementById('boardProjectName').innerText = '当前暂无推进中的大项目';
+            listContainer.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:50px; background:#fff; border-radius:10px; border:1px dashed #cbd5e1;">AI CEO 尚未建立任何项目或拆解任务</div>';
+        }
+    } catch (e) { console.error("看板拉取失败", e); }
+}
+
+// 新增：折叠/展开动画控制函数
+function toggleProject(headerEl) {
+    const taskList = headerEl.nextElementSibling;
+    const icon = headerEl.querySelector('.toggle-icon');
+    const isExpanded = headerEl.classList.contains('expanded');
+
+    if (isExpanded) {
+        headerEl.classList.remove('expanded');
+        taskList.style.display = 'none';
+        icon.innerText = '▶';
+    } else {
+        headerEl.classList.add('expanded');
+        taskList.style.display = 'block';
+        icon.innerText = '▼';
+    }
+}
+
+async function deleteProject() {
+    if(!confirm("⚠️ 确定要一键清空当前所有项目进度和任务吗？这通常用于项目验收结项后。")) return;
+    try {
+        const res = await fetch('/api/board', { method: 'DELETE' });
+        if(res.ok) {
+            alert('✅ 项目已归档结项！');
+            await refreshBoard();
+        }
+    } catch(e) { alert('操作异常！'); }
+}
+
+
+
 function ensureOneEmptyDesk() {
     const grid = document.getElementById('mainDeskGrid');
     const emptyDesks = Array.from(grid.querySelectorAll('.company-card.empty-desk'));
@@ -2480,38 +2806,72 @@ async function openLicenseModal() {
                 alert(`❌ 网络请求异常，请检查控制台。`);
             }
         }
-        async function confirmTask() {
-            let taskContent = document.getElementById('taskInput').value.trim();
-            if (!taskContent) return alert("任务内容不能为空！");
 
-            taskContent += '注意：你是一个团队公司，这些任务需要你们公司团队人员协作配合完成。';
 
-            closeModal('taskModal');
 
-            const mIdx = window.teamConfig?.PeerNodes?.[currentTargetName]?.ModelIndex || 0;
-            const bubble = currentTargetDesk.querySelector('.chat-bubble');
-            if (bubble) {
-                bubble.classList.remove('done');
-                bubble.classList.add('thinking');
-                bubble.innerText = '愿上帝与我们同在！！！';
-                currentTargetDesk.dataset.taskStartTime = Date.now();
-            }
 
-            try {
-                // 发送任务后，无需 await 阻塞等待长连接流
-                fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Username': encodeURIComponent(currentTargetName)
-                    },
-                    body: JSON.stringify({ message: taskContent, modelIndex: mIdx })
-                }).catch(e => console.error('长连接断开或异常 (前端轮询接管中):', e));
-                   
-            } catch (e) {
-                console.error('任务派发异常:', e);
-            }
-        }
+
+async function confirmTask() {
+    let taskContent = document.getElementById('taskInput').value.trim();
+    if (!taskContent) return alert("任务内容不能为空！");
+
+    // 1. 原本的拼接逻辑不需要了，还原即可
+    taskContent = `用户需求：${taskContent}`;
+    taskContent += `
+
+【系统级强制规范 - 必读】：
+请根据你的岗位头衔（Role）对号入座，严格执行以下SOP：
+
+▶ 若你是 项目经理/CEO/统筹者（负责拆解和派发任务）：
+1. 动手前优先审视【项目看板】。若与老项目无关，调用 update_project_board 建立新计划。若是与老项目有关那就按照老项目的进度接着执行下去。
+2. 委派留言中【必须】附带任务ID，并强制要求对方：“做完后必须调用 update_task_status 标记为 done！”
+3. 你自己很少干活。当用户提出需求的时候你负责统筹员工开始工作。
+4. 必须严格按照 【公司最高主旨与工作流流程说明】 去安排流程。
+
+▶ 若你是 基层员工/执行者（负责具体的代码、工具、检索执行）：
+1. 当你的工作彻底完成后，你【必须】主动调用 update_task_status 工具，将老板派给你的 任务ID 状态更新为 done！
+2. 状态更新成功后，再输出最终的工作汇报。
+3. 若你需要同事援助，可优先呼叫同事援助。
+
+
+【注意】
+你们公司内部就可以满足用户需求，直接基于你们团队的工作给与用户最终结果。避免只开会不干活的情况。用户需要的是最终结果，碰到不确定的可以同事之间内部讨论。用户只在意最终结果，不要只给方案不具体做事。
+
+
+`;
+
+    closeModal('taskModal');
+
+    const mIdx = window.teamConfig?.PeerNodes?.[currentTargetName]?.ModelIndex || 0;
+    const bubble = currentTargetDesk.querySelector('.chat-bubble');
+    if (bubble) { /* ... 保持不变 ... */ }
+
+    // 2. 拿到中控存的公司制度
+    const companySop = window.teamConfig?.CompanySOP || "";
+
+    try {
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Username': encodeURIComponent(currentTargetName)
+            },
+            // 👇 3. 核心修改：在 JSON 里多传一个 sop 字段
+            body: JSON.stringify({ 
+                message: taskContent, 
+                modelIndex: mIdx,
+                sop: companySop  // <--- 新增这个字段
+            })
+        }).catch(e => console.error('长连接断开或异常 (前端轮询接管中):', e));
+    } catch (e) {
+        console.error('任务派发异常:', e);
+    }
+}
+
+
+
+
+
 
         async function openNodeTasks(event, empName) {
             event.stopPropagation(); // 阻止触发工位点击
