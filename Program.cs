@@ -1644,6 +1644,7 @@ function ensureOneEmptyDesk() {
 
                 let index = 0;
                 for (const [name, info] of Object.entries(cfg.PeerNodes)) {
+                    if (name === 'Team中控') continue;
                     const desk = createDeskElement(); // 动态生成工位
                     const role = info.Role || info.role || '资深员工';
                     renderEmployeeUI(desk, name, role);
