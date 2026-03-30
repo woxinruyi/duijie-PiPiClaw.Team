@@ -1768,6 +1768,7 @@ class Program
 
                     // 1. 遍历保存的通讯录，依次填入工位
                     for (const [name, info] of Object.entries(cfg.PeerNodes)) {
+                        if (name === 'Team中控') continue;
                         if (index < desks.length) {
                             const role = info.Role || info.role || '资深员工';
                             renderEmployeeUI(desks[index], name, role);
