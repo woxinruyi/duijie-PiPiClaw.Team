@@ -1791,6 +1791,32 @@ class Program
     </div>
 </div>
 
+<div id="strategyEditModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10050; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+    <div style="background:#f8fafc; padding:25px; border-radius:15px; width:550px; max-height: 80vh; display:flex; flex-direction:column; gap:15px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+            <h3 style="margin:0; color:#2c3e50; font-size: 1.2rem;">🛠️ 战略二次编排</h3>
+            <button onclick="closeModal('strategyEditModal')" style="border:none; background:none; font-size:20px; cursor:pointer; color:#666;">✖</button>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <strong style="color: #475569; width: 80px;">项目名称:</strong>
+            <input type="text" id="editProjectName" style="flex:1; padding:10px; border:1px solid #cbd5e1; border-radius:8px; outline:none; font-weight:bold; color:#1e293b;">
+        </div>
+
+        <div style="flex:1; overflow-y:auto; padding-right: 5px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;" id="editTaskListContainer">
+            </div>
+
+        <div style="display:flex; gap:10px; margin-top:5px;">
+            <button onclick="addStrategyTask()" style="padding:10px 15px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:8px; font-weight:bold; cursor:pointer; transition: 0.2s;">
+                ➕ 新增一项任务
+            </button>
+            <div style="flex: 1;"></div>
+            <button onclick="confirmAndDispatchStrategy()" style="padding:10px 20px; background:linear-gradient(135deg, #16a085, #27ae60); color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer; box-shadow:0 4px 10px rgba(39,174,96,0.3);">
+                🚀 确认发布并执行
+            </button>
+        </div>
+    </div>
+</div>
 
 <div id="loadingOverlay" class="hr-loading-container">
     <div class="hr-spinner"></div>
@@ -1821,17 +1847,57 @@ async function dispatchCeoTask() {
     closeModal('ceoModal');
     const companySop = window.teamConfig?.CompanySOP || "";
     let pmName = "ceo";
-    const nodes = Object.entries(window.teamConfig?.PeerNodes || {}).filter(([name, info]) => {
+
+    // 1. 获取所有除 ceo 以外的员工
+    const allNodes = Object.entries(window.teamConfig?.PeerNodes || {}).filter(([name, info]) => {
         return name && name !== 'undefined' && name.toLowerCase() !== 'ceo';
     });
 
-    if (nodes.length === 0) {
+    if (allNodes.length === 0) {
         return alert("公司除了老板没别人了，先去招人吧！");
     }
-    const teamInfo = nodes.map(([name, info]) => 
+
+    // ================= 【核心修改：从项目看板排期过滤忙碌员工】 =================
+    document.getElementById('loadingOverlay').style.display = 'flex';
+    document.querySelector('.hr-loading-text').innerText = `正在确认员工档期...`;
+    document.querySelector('.hr-loading-subtext').innerText = `正在查阅所有历史项目的任务排期表...`;
+
+    let busyEmployees = new Set();
+    try {
+        // 直接向中控拉取最新的全局项目看板
+        const boardRes = await fetch('/api/board');
+        if (boardRes.ok) {
+            const projects = await boardRes.json();
+            projects.forEach(p => {
+                if (p.tasks && p.tasks.length > 0) {
+                    p.tasks.forEach(t => {
+                        // 只要状态不是 done (即 todo 或 doing)，这个人就被上个项目占用了
+                        const status = (t.status || t.Status || 'todo').toLowerCase();
+                        if (status !== 'done') {
+                            const assignee = t.assignee || t.Assignee;
+                            if (assignee) busyEmployees.add(assignee);
+                        }
+                    });
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("拉取看板排期失败，跳过排期检测", e);
+    }
+
+    // 过滤出真正闲置的员工（名字不在 busyEmployees 集合中的）
+    const availableNodes = allNodes.filter(([name, info]) => !busyEmployees.has(name));
+
+    if (availableNodes.length === 0) {
+        document.getElementById('loadingOverlay').style.display = 'none';
+        return alert("老板，项目看板上大家都有没做完的任务（处于 todo 或 doing 状态）！\n为了防止并发冲突，请等他们清空手头任务，或者再去直聘招点新人吧。");
+    }
+
+    // 2. 仅使用【排期空闲员工】生成能力边界清单
+    const teamInfo = availableNodes.map(([name, info]) => 
         `- 姓名: ${name}, 岗位: ${info.Role || info.role || '未知'}, 职责: ${info.Description || info.description || '暂无'}`
     ).join('\n');
-
+    // ================= 【核心修改结束】 =================
 
 
 const planPrompt = `【全局任务调度与执行编排引擎】
@@ -1919,9 +1985,7 @@ ${teamInfo}
         if (boardData.tasks && Array.isArray(boardData.tasks)) {
             boardData.tasks.forEach((t, index) => {
                 if (!t.id) {
-                    // 使用浏览器原生的 crypto 接口生成规范 UUID 并截取 8 位
-                    t.id = crypto.randomUUID().replace(/-/g, '').substring(0, 8);
-                    // 或者按你说的最简单的顺延： t.id = `task_${index + 1}`;
+                    t.id = Math.random().toString(36).substring(2, 10);
                 }
                 if (!t.status) {
                     t.status = "todo";
@@ -1929,7 +1993,100 @@ ${teamInfo}
             });
         }
 
-        // 4. 将 AI 生成的计划同步到本地系统进行立项
+        // ================= 【核心修改：拦截直接执行，进入二次编排弹窗】 =================
+        window.tempStrategyBoardData = boardData; // 存入全局变量供弹窗二次编辑
+        document.getElementById('loadingOverlay').style.display = 'none'; // 先关掉加载动画
+        openStrategyEditModal(); // 打开二次编排弹窗
+
+    } catch (e) {
+        document.getElementById('loadingOverlay').style.display = 'none';
+        alert("❌ 项目生成失败，可能是 AI 脑子抽风没按格式返回 JSON，请重试或检查后台日志。\n" + e.message);
+    }
+}
+// ================= 二次编排相关逻辑 =================
+
+function openStrategyEditModal() {
+    const data = window.tempStrategyBoardData;
+    document.getElementById('editProjectName').value = data.project_name || "未命名新项目";
+    renderStrategyTasks();
+    document.getElementById('strategyEditModal').style.display = 'flex';
+}
+
+function renderStrategyTasks() {
+    const container = document.getElementById('editTaskListContainer');
+    container.innerHTML = '';
+    const tasks = window.tempStrategyBoardData.tasks || [];
+
+    // 动态拉取当前所有在职员工名单（不含ceo）
+    const employees = Object.keys(window.teamConfig?.PeerNodes || {}).filter(n => n !== 'ceo');
+
+    tasks.forEach((t, i) => {
+        // 构建员工下拉框
+        let optionsHtml = employees.map(emp => 
+            `<option value="${emp}" ${t.assignee === emp ? 'selected' : ''}>👤 ${emp}</option>`
+        ).join('');
+
+        container.innerHTML += `
+            <div style="display:flex; gap:10px; margin-bottom:12px; align-items:center; background:#f8fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
+                <div style="display:flex; flex-direction:column; flex:1; gap:6px;">
+                    <input type="text" value="${escapeHtml(t.title)}" onchange="window.tempStrategyBoardData.tasks[${i}].title = this.value" style="padding:8px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-size:14px;" placeholder="任务具体内容">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:12px; color:#64748b;">负责人:</span>
+                        <select onchange="window.tempStrategyBoardData.tasks[${i}].assignee = this.value" style="padding:6px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; outline:none; cursor:pointer;">
+                            <option value="">❓ 待认领</option>
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                </div>
+                <button onclick="deleteStrategyTask(${i})" style="padding:10px; background:#fef2f2; color:#ef4444; border:1px solid #fecaca; border-radius:8px; cursor:pointer; font-size:16px;" title="删除此任务">🗑️</button>
+            </div>
+        `;
+    });
+
+    if (tasks.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding:20px; color:#94a3b8;">当前项目还没有任何任务，请手动新增。</div>`;
+    }
+}
+
+function addStrategyTask() {
+    if (!window.tempStrategyBoardData.tasks) window.tempStrategyBoardData.tasks = [];
+    window.tempStrategyBoardData.tasks.push({
+        id: Math.random().toString(36).substring(2, 10),
+        title: "",
+        assignee: "",
+        status: "todo"
+    });
+    renderStrategyTasks(); // 刷新列表
+}
+
+function deleteStrategyTask(idx) {
+    window.tempStrategyBoardData.tasks.splice(idx, 1);
+    renderStrategyTasks(); // 刷新列表
+}
+
+// 确认发布按钮：将修改后的结果正式发给后端与底层系统
+async function confirmAndDispatchStrategy() {
+    const boardData = window.tempStrategyBoardData;
+    boardData.project_name = document.getElementById('editProjectName').value.trim() || "未命名新项目";
+
+    // 过滤掉没填内容的空任务
+    boardData.tasks = (boardData.tasks || []).filter(t => t.title.trim() !== "");
+
+    if (boardData.tasks.length === 0) {
+        return alert("⚠️ 必须至少保留一个非空的任务才能发布！");
+    }
+
+    closeModal('strategyEditModal');
+
+    // 重新开启原来的 loading 动画
+    document.getElementById('loadingOverlay').style.display = 'flex';
+    document.querySelector('.hr-loading-text').innerText = '正在立项并强制委派编排后的任务...';
+
+    const pmName = "ceo";
+    const companySop = window.teamConfig?.CompanySOP || "";
+
+    try {
+        // 4. 将 AI 加上人为二次修改的计划，同步到本地系统进行立项
         await fetch('/api/board', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1937,11 +2094,9 @@ ${teamInfo}
         });
         await refreshBoard(); // 刷新网页端的看板显示
 
-        // 5. 第二轮：带着生成好的任务去催促 PM 挨个分配调用
-        document.querySelector('.hr-loading-text').innerText = `立项成功！正在让【${pmName}】开始委派任务...`;
-        const execPrompt = `【项目分发阶段】\n刚才你制定的项目【${boardData.project_name}】已成功通过底层代码写入系统看板！\n以下是系统确认后的带 ID 任务清单：\n${JSON.stringify(boardData.tasks, null, 2)}\n\n现在，请你作为统筹者，立刻使用 delegate_task 工具，挨个向上述负责人下发工作（务必把 JSON 中的 id 传给 task_id 参数）。你可以一次性发起多个工具调用来分发任务。`;
+        // 5. 第二轮：带着确认好的任务去催促 PM 挨个分配调用
+        const execPrompt = `【项目分发阶段】\n刚才老板制定的项目【${boardData.project_name}】已确认定稿并写入看板！\n以下是老板亲自调整后的带 ID 任务清单：\n${JSON.stringify(boardData.tasks, null, 2)}\n\n现在，请你作为统筹者，立刻使用 delegate_task 工具，挨个向上述负责人下发工作（务必把 JSON 中的 id 传给 task_id 参数）。`;
 
-        // 👇 核心修改：改为请求 /api/agent_task，并强制声明指令来自 ceo
         fetch('/api/agent_task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Username': encodeURIComponent(pmName) },
@@ -1949,21 +2104,19 @@ ${teamInfo}
                 message: execPrompt,
                 modelIndex: window.teamConfig?.PeerNodes?.[pmName]?.ModelIndex || 0,
                 sop: companySop,
-                caller: "ceo" // 强制声明老板身份
+                caller: "ceo" 
             })
         }).catch(e => console.error('后台分发任务异常:', e));
 
-        alert(`✅ 项目【${boardData.project_name}】已成功立项并更新看板！\n【${pmName}】正在后台开始委派任务给员工，请稍后在看板中查看进度。`);
+        alert(`✅ 项目【${boardData.project_name}】已根据您的编排成功立项！\n【${pmName}】正在后台开始精确委派任务。`);
         document.getElementById('ceoTaskInput').value = '';
 
     } catch (e) {
-        alert("❌ 项目生成或分发失败，可能是 AI 脑子抽风没按格式返回 JSON，请重试或检查后台日志。\n" + e.message);
+        alert("❌ 最终立项或分发失败，请检查网络：" + e.message);
     } finally {
         document.getElementById('loadingOverlay').style.display = 'none';
     }
 }
-
-
 
 // 动态计算并适配网格宽度 (手机端受 CSS 控制永远两列)
 function adjustGridColumns() {
