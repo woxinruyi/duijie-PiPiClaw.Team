@@ -8,8 +8,6 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace PiPiClaw.Team;
-
-// AOT 必须使用 Source Generator 处理 JSON
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(ChatRequest))]
